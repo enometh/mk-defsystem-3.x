@@ -1292,7 +1292,8 @@ on the particular lisp compiler version being used.")
     #+(and :lispworks
            (not :lispworks4)
            (not :lispworks5)
-           (not :lispworks6))
+           (not :lispworks6)
+	   (not :lispworks7))
     ,(multiple-value-bind (major minor)
 			  #-:lispworks-personal-edition
 			  (system::lispworks-version)
@@ -1308,7 +1309,7 @@ on the particular lisp compiler version being used.")
 					 (find-package "SYSTEM")))
            (find-symbol "*CURRENT-WORKING-DIRECTORY*"
                         (find-package "LW"))))
-    #+(or :lispworks4 :lispworks5 :lispworks6)
+    #+(or :lispworks4 :lispworks5 :lispworks6 :lispworks7)
     (hcl:get-working-directory)
     ;; Home directory
     #-sbcl
@@ -1429,7 +1430,7 @@ and up to date.")
  	 #+ACLPC                              ("lsp"  . "fsl")
  	 #+CLISP                              ("lisp" . "fas")
          #+KCL                                ("lsp"  . "o")
-         ;;#+ECL                                ("lsp"  . "so")
+;;         #+ECL                                ("lsp"  . "so")
          #+IBCL                               ("lsp"  . "o")
          #+Xerox                              ("lisp" . "dfasl")
 	 ;; Lucid on Silicon Graphics
@@ -2102,6 +2103,7 @@ ABS: NIL          REL: NIL               Result: ""
        ;; For use with logical pathnames package.
        (append-logical-directories-mk absolute-directory relative-directory))
      |#
+      #+NIL				; madhu 060906
       ((namestring-probably-logical absolute-directory)
        ;; A simplistic stab at handling logical pathnames
        (append-logical-pnames absolute-directory relative-directory))
@@ -2281,7 +2283,7 @@ ABS: NIL          REL: NIL               Result: ""
 	 (pathname
 	  ;; The following potentially translates the logical pathname
 	  ;; very early, but we cannot avoid it.
-	  (namestring (merge-pathnames rel (translate-logical-pathname abs))))
+	  (namestring (merge-pathnames rel (translate-logical-pathname abs) nil))) ;madhu: add nil Tue Jun 28 12:02:55 2005
 	 ))
       (pathname
        (namestring (merge-pathnames rel abs)))
@@ -2952,11 +2954,13 @@ used with caution.")
     ;; Added COMPONENT-NAME extraction to :NAME part, in case the
     ;; PATHNAME-NAME is NIL.
 
-    (cond ((pathname-logical-p pathname) ; See definition of test above.
+    ;; ;madhu 060520 (PATHNAME pathname) or search-hosts are logical
+    (cond ((pathname-logical-p (pathname pathname)) ; See definition of test above.
 	   (setf pathname
 		 (merge-pathnames pathname
-				  (make-pathname
-				   :name (component-name component)
+				  (make-pathname ;madhu 080208 (lw)
+				   :name (or (pathname-name pathname)
+					     (component-name component))
 				   :type (component-extension component
 							      type))))
 	   (namestring (translate-logical-pathname pathname)))
@@ -2964,18 +2968,46 @@ used with caution.")
 	   (namestring
 	    (make-pathname :host (or (component-host component)
 				     (pathname-host pathname))
+			   #+nil ;; madhu 050203
+			   (or (when (component-host component)
+				 ;; MCL2.0b1 and ACLPC cause an error on
+				 ;; (pathname-host nil)
+				 (pathname-host (component-host component)
+						#+scl :case #+scl :common))
+			       #+cmu
+			       lisp::*unix-host*)
+
 
 			   :directory (pathname-directory pathname
 							  #+scl :case
 							  #+scl :common
 							  )
 
-			   :name (or (pathname-name pathname
-                                                    #+scl :case
-                                                    #+scl :common
-                                                    )
-                                     (component-name component))
-
+			   ;madhu 060520 cannot have pathname-name
+			   ;here because cmucl (ansi) parses the
+			   ;string PATHNAME "foo.new" into "foo" of
+			   ;type
+			   ;
+			   ; madhu 061005 - private file is an
+			   ; exception as one cannot rely on
+			   ; component-name there. (silly argument for
+			   ; pathname-name error)
+			   :name
+                           ;;madhu 080206 (fix from marcoxa)
+                           (or (pathname-name pathname
+					      #+scl :case
+					      #+scl :common
+					      )
+			       (component-name component))
+			   #+MADHU-OLDER-BOGUS-FIX
+			   (if (or
+				(eq (component-type component) :private-file)
+				(null (pathname-type pathname)))
+			       (pathname-name pathname
+					      #+scl :case
+					      #+scl :common
+					      )	; XXX>
+			       (component-name component))
 			   :type
 			   #-scl (component-extension component type)
 			   #+scl (string-upcase
