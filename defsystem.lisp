@@ -3186,6 +3186,9 @@ used with caution.")
 	          when value
                     do (remf definition-body slot)
                     and nconc `(,slot ,value))
+	  #+nil				; madhu 061005 - this code
+					; (1.102 revision) below is
+					; nonsense
 	  ,@(loop for slot in *component-form-slots*
 		  for form = (getf definition-body slot)
 	          do (remf definition-body slot)
