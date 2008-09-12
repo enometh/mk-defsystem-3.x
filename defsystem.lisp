@@ -555,6 +555,9 @@
 ;;;                 component.
 ;;; 2002-01-08 kmr  Changed allegro symbols to lowercase to support
 ;;;                 case-sensitive images
+;;;
+;;; 2008-09-12 dsm  allegro-module-provider hack
+;;;
 
 ;;;---------------------------------------------------------------------------
 ;;; ISI Comments
@@ -4523,6 +4526,60 @@ used with caution.")
   )
 
 
+#+allegro
+(progn
+(defvar *allegro-mk-defsystem-module-provider-hack-dummy-load-pathname*
+  "/tmp/acldummy.cl")
+;; system wide resource
+(unless (probe-file *allegro-mk-defsystem-module-provider-hack-dummy-load-pathname*)
+  (with-open-file (stream
+		   *allegro-mk-defsystem-module-provider-hack-dummy-load-pathname*
+		   :direction :output)
+    (write-string
+";;; -*- Mode: LISP; Package: :cl-user; BASE: 10; Syntax: ANSI-Common-Lisp; -*-
+;;; Dummy file
+\(in-package :cl-user)
+\(defvar *acldummyloadcount* 0)
+\(defvar *acldummyloadmodules* nil)
+\(incf *acldummyloadcount*)" stream))))
+
+#+nil
+(delete-file *allegro-mk-defsystem-module-provider-hack-dummy-load-pathname*)
+
+#+allegro
+(defun mk::allegro-mk-defsystem-module-provider-hack ; madhu 20080504
+    (supplied-name search-list order check-bundle check-lower-case)
+  ;;(declare (ignore search-list order check-bundle))
+  (warn "XXX: ~S."
+	(pairlis '(supplied-name search-list order check-bundle check-lower-case)
+		 (list supplied-name search-list order check-bundle check-lower-case)))
+  (let* ((name (if (pathnamep supplied-name)
+		   (namestring supplied-name)
+		   (string supplied-name)))
+	 (module-name (string-downcase name))
+	 (dummy-return (mk::compute-system-path module-name nil)))
+    (when (mk:find-system module-name :load-or-nil)
+      (mk:operate-on-system module-name :load
+			    :force mk::*force*
+			    :version mk::*version*
+			    :test mk::*oos-test*
+			    :verbose mk::*oos-verbose*
+			    :load-source-if-no-binary mk::*load-source-if-no-binary*
+			    :bother-user-if-no-binary mk::*bother-user-if-no-binary*
+			    :compile-during-load mk::*compile-during-load*
+			    :load-source-instead-of-binary
+			    mk::*load-source-instead-of-binary*
+			    :minimal-load mk::*minimal-load*)
+      (warn "XXX: Returning: ~S." dummy-return)
+      ;; this fails when you do not have a .system file.
+      (or dummy-return
+	  *allegro-mk-defsystem-module-provider-hack-dummy-load-pathname*))))
+
+#+allegro
+(let ((form '(:CALL mk::allegro-mk-defsystem-module-provider-hack)))
+  (unless (find form sys::*require-search-list* :test #'equal)
+    (setq sys::*require-search-list*
+	  (append sys::*require-search-list* (list form)))))
 
 
 ;;; ********************************
