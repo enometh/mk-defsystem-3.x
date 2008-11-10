@@ -4386,7 +4386,10 @@ used with caution.")
 
           ;; If no system definition file, try regular require.
           ;; had last arg  PATHNAME, but this wasn't really necessary.
-          ((funcall *old-require* module-name))
+	  ((let ((val (funcall *old-require* module-name))) ;madhu 080827 debug lw hqn-web
+	     (format t "===> MADHU: called ~S on ~S~&===> MADHU: RETURNED ~S~&"
+		     *old-require* module-name val)
+	     val))
 
           ;; If no default action, print a warning or error message.
           (t
@@ -4487,6 +4490,8 @@ used with caution.")
 	       #+:lispworks3.1 'common-lisp::require
 	       #-:lispworks3.1 'system::require
 	       )
+	      (lambda (&rest args) (apply 'new-require args))
+	      #+nil
 	      (symbol-function 'new-require))
 	(setq system::*packages-for-warn-on-redefinition* warn-packs))
       #+(and allegro-version>= (version>= 4 1))
