@@ -1215,9 +1215,10 @@
 
 (defvar *dont-redefine-require*
   #+cmu (if (find-symbol "*MODULE-PROVIDER-FUNCTIONS*" "EXT") t nil)
+  #+:clozure-common-lisp t
   #+(or clisp sbcl) t
   #+allegro t
-  #-(or cmu sbcl clisp allegro) nil
+  #-(or cmu sbcl clisp allegro :clozure-common-lisp) nil
   "If T, prevents the redefinition of REQUIRE.
 This is useful for lisps that treat REQUIRE specially in the compiler.")
 
@@ -4529,6 +4530,17 @@ used with caution.")
 
   (pushnew 'cmucl-mk-defsystem-module-provider ext:*module-provider-functions*)
   )
+
+#+:clozure-common-lisp
+(progn
+(defun clozure-mk-defsystem-module-provider (name)
+  (let ((module-name (string-downcase (string name))))
+    (when (mk:find-system module-name :load-or-nil)
+      (mk:load-system module-name
+		      :compile-during-load t
+		      :verbose nil))))
+(pushnew 'clozure-mk-defsystem-module-provider
+	 ccl:*module-provider-functions*))
 
 
 #+allegro
