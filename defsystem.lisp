@@ -874,6 +874,7 @@
       :cormanlisp
       :scl
       :clozure-common-lisp
+      :mkcl
       (and allegro-version>= (version>= 4 1)))
 (eval-when #-(or :lucid)
            (:compile-toplevel :load-toplevel :execute)
@@ -994,7 +995,7 @@
 ;;; MAKE package. A nice side-effect is that the short nickname
 ;;; MK is my initials.
 
-#+(or clisp cormanlisp ecl (and gcl defpackage) sbcl)
+#+(or clisp cormanlisp ecl mkcl (and gcl defpackage) sbcl)
 (defpackage "MAKE" (:use "COMMON-LISP") (:nicknames "MK"))
 
 ;;; For CLtL2 compatible lisps...
@@ -1060,7 +1061,7 @@
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (in-package "MAKE"))
 
-#+ecl
+#+(or ecl mkcl)
 (in-package "MAKE")
 
 ;;; *** Marco Antoniotti <marcoxa@icsi.berkeley.edu> 19970105
@@ -1218,7 +1219,8 @@
   #+:clozure-common-lisp t
   #+(or clisp sbcl) t
   #+allegro t
-  #-(or cmu sbcl clisp allegro :clozure-common-lisp) nil
+  #+mkcl t
+  #-(or cmu sbcl clisp allegro :clozure-common-lisp mkcl) nil
   "If T, prevents the redefinition of REQUIRE.
 This is useful for lisps that treat REQUIRE specially in the compiler.")
 
@@ -1617,6 +1619,7 @@ s/^[^M]*IRIX Execution Environment 1, *[a-zA-Z]* *\\([^ ]*\\)/\\1/p\\
   #+akcl      "akcl"
   #+gcl       "gcl"
   #+ecl       "ecl"
+  #+mkcl      "mkcl"
   #+lucid     "lucid"
   #+ACLPC     "aclpc"
   #+CLISP     "clisp"
@@ -3855,7 +3858,7 @@ used with caution.")
 	  ;; CL implementations may uniformly default this to nil
 	  (let ((*load-verbose* #-common-lisp-controller t
 				#+common-lisp-controller nil) ; nil
-		#-(or MCL CMU CLISP ECL :sbcl lispworks scl)
+		#-(or MCL CMU CLISP ECL MKCL :sbcl lispworks scl)
 		(*compile-file-verbose* t) ; nil
 		#+common-lisp-controller
 		(*compile-print* nil)
@@ -4718,7 +4721,7 @@ used with caution.")
   #+:allegro (excl:run-shell-command
 	      (format nil "~A~@[ ~{~A~^ ~}~]"
 		      program arguments))
-  #+(or :kcl :ecl) (system (format nil "~A~@[ ~{~A~^ ~}~]" program arguments))
+  #+(or :kcl :ecl :mkcl) (system (format nil "~A~@[ ~{~A~^ ~}~]" program arguments))
   #+(or :cmu :scl) (extensions:run-program program arguments)
   #+:openmcl (ccl:run-program program arguments)
   #+:sbcl (sb-ext:run-program program arguments)
@@ -4984,14 +4987,14 @@ output to *trace-output*.  Returns the shell's exit code."
 	  #+(and :lispworks :unix (not :linux) (not :macosx)) #'link-load:read-foreign-modules
 	  #+(and :lispworks :unix (or :linux :macosx)) #'fli:register-module
 	  #+(and :lispworks :win32) #'fli:register-module
-          #+(or :ecl :gcl :kcl) #'load ; should be enough.
+          #+(or :ecl :gcl :kcl :mkcl) #'load ; should be enough.
           #-(or :lucid
 		:allegro
 		:cmu
 		:sbcl
 		:scl
 		:lispworks
-		:ecl :gcl :kcl)
+		:ecl :gcl :kcl :mkcl)
 	  (lambda (&rest args)
 	    (declare (ignore args))
 	    (cerror "Continue returning NIL."
