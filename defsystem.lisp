@@ -64,7 +64,7 @@
 ;;; authorization from M. Kantrowitz and M. Antoniotti.
 
 
-;;; Please send bug reports, comments and suggestions to <marcoxa@cons.org>.
+;;; Please send bug reports, comments and suggestions to <enometh@meer.net>.
 
 ;;; ********************************
 ;;; Change Log *********************
@@ -3213,7 +3213,7 @@ used with caution.")
 ;;; computed from *LOAD-PATHNAME* and stored as the :SOURCE-PATHNAME
 ;;; of the system.
 
-(defmacro defsystem (name &rest definition-body)
+(defmacro defsystem (name &body definition-body) ;madhu 090209
   (unless (find :source-pathname definition-body)
     (setf definition-body
 	  (list* :source-pathname
@@ -5023,7 +5023,7 @@ output to *trace-output*.  Returns the shell's exit code."
     (run-unix-program *fortran-compiler* arg-list)))
 
 
-(mk:define-language :fortran
+(define-language :fortran
     :compiler #'fortran-compile-file
     :loader #'identity
     :source-extension "f"
