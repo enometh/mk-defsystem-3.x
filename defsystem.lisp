@@ -3782,6 +3782,208 @@ used with caution.")
        (y-or-n-p-wait #\n 10 "2? "))
 ||#
 
+
+;;; ----------------------------------------------------------------------
+;;;
+;;; madhu: Concatedfasl target 101216
+;;;
+;;; alternative interfaces to files-in-system-and-dependents
+;;;
+;;;  *load-concated-fasl-instead*  (TODO)
+;;;  *concated-fasl-suffix*
+;;;  %concated-fasl-pathname
+;;;  %mk-traverse
+;;;  system-map-files (&optional function &key type (:source :binary)
+;;;  mklib
+;;; *recursively-handle-deps* (TODO ELIM)
+;;;
+
+(defun %mk-traverse (system function &optional collect-results
+		     *recursively-handle-deps*)
+  ;; One _could_ use mk::*operations-propagate-to-subsystems* instead
+  ;; of *recursively-handle-deps* to control what happens on
+  ;; dependencies but the default value may not be appropriate.
+  (declare (special *recursively-handle-deps*))
+  (labels ((walk-components (component &aux result)
+	     (setq result (funcall function component))
+	     (ecase (mk::component-type component)
+	       ((:file :private-file)
+		(when collect-results
+		  (if (or (eql collect-results t)
+			  (funcall collect-results component))
+		      (list result))))
+	       ((:module :system :subsystem :defsystem)
+		(let* ((deps (mk::component-depends-on component))
+		       (handle-deps-p
+			(cond
+			  ((null deps) nil)
+			  ((eq *recursively-handle-deps* :never)
+			   (format t "Always Skipping deps: skipped ~A."
+				   deps)
+			   nil)
+			  (*recursively-handle-deps* t)
+			  (t
+			   (restart-case
+			       (cerror "Skip deps." "System ~S depends on: ~S."
+				       component deps)
+			     (handle-this-once ()
+			       :report "Handle deps."
+			       t)
+			     (recursively-open-deps ()
+			       :report "Always recursively handle deps."
+			       (setq *recursively-handle-deps* t))
+			     (discard-all-deps ()
+			       :report "Never handle deps."
+			       (setq *recursively-handle-deps* :never)
+			       nil))))))
+		  (nconc
+		   (when handle-deps-p
+		     (loop for dep in deps
+			   for depsys = (ignore-errors (mk:find-system dep))
+			   unless depsys
+			   do
+			   (warn "Not handling unknown system: ~S." dep)
+			   else nconc (walk-components depsys)))
+		   (loop for x in (mk::component-components component)
+			 nconc (walk-components x))))))))
+    (walk-components (etypecase system
+		       (mk::component
+			(ecase (mk::component-type system)
+			  (:defsystem system)))
+		       ((or string symbol) (mk:find-system system))))))
+
+(defun system-map-files (system &optional function &key (type :source) &aux ret)
+  ;; "Rename as SYSTEM-MAP-PATHNAMES if docstring is ever written."
+  (%mk-traverse
+   system
+   (lambda (component)
+     (when (find (mk::component-type component) '(:file :private-file))
+       (let ((arg (and (mk::component-pathname component type)
+		       (mk::component-full-pathname component type))))
+	 (when arg
+	   (if function
+	       (funcall function (pathname arg))
+	       (push  (pathname arg) ret)))))))
+  (nreverse ret))
+
+(defvar *load-concated-fasl-instead* t)
+(defvar *concated-fasl-suffix* "-library")
+
+(defun %concated-fasl-pathname (system &optional (defaults *default-pathname-defaults*))
+  (make-pathname
+   :name (concatenate 'string
+                      (MK::COMPONENT-NAME system)
+                      *concated-fasl-suffix*)
+   :type (or (mk::component-binary-extension system)
+             #+cmu
+             (c:backend-fasl-file-type c:*target-backend*)
+             #-cmu
+             (pathname-type (compile-file-pathname "foo")))
+   :version :newest
+   :defaults (etypecase defaults
+               (symbol
+                (ecase defaults
+                  ((nil :system)
+                   (mk::component-full-pathname system :binary))))
+               (string (pathname defaults))
+               (pathname defaults))))
+
+(defun mklib (system &optional (defaults *default-pathname-defaults*)
+	      &aux fasls)
+  "Creates a concatenated fasl file named \"SYSTEM-LIBRARY.FASL\" from
+the fasl files of the given mk-defsystem system SYSTEM.  The system
+should already be compiled.  The concatenated file is written in the
+DEFAULTS directory.  LIBRARY is taken from *concated-fasl-suffix*
+which defaults to \"-library\"."
+  (labels ((handle-load-only (component)
+	     (assert (find (mk::component-type component)
+			   '(:file :private-file)))
+	     (let* ((source-pathname
+		     (mk::component-full-pathname component :source))
+		    (binary-pathname
+		     (mk::component-full-pathname component :binary))
+		    (binary-truename (probe-file binary-pathname))
+		    (compilation-required-p
+		     (cond (binary-truename
+			    (< (file-write-date binary-truename)
+			       (file-write-date (truename source-pathname))))
+			   (t t))))
+	       (restart-case
+		   (cerror "Skip this file." "Component ~S is load-only."
+			   component)
+		 (use-existing ()
+		   :test
+		   (lambda (condition)
+		     (declare (ignore condition))
+		     (push binary-truename fasls))
+		   :report
+		   (lambda (stream)
+		     (format stream "Use already compiled (~:[Current~;Out of Date~]) binary: ~A."
+			     compilation-required-p binary-truename))
+		   binary-truename)
+		 (compile-and-use ()
+		   :report
+		   (lambda (stream)
+		     (format stream "Compile ~A to ~A and use that fasl?"
+			     source-pathname binary-pathname))
+		   (multiple-value-bind (output-truename warnings-p failure-p)
+		       (compile-file source-pathname
+				     :output-file binary-pathname)
+		     (declare (ignore warnings-p))
+		     (cond (failure-p
+			    (cerror "Skip this file."
+				    "Compilation of ~A to produce ~A failed."
+				    source-pathname binary-pathname))
+			   (t (push output-truename fasls))))))))
+	   (handle-one (component)
+	     (when (find (mk::component-type component) '(:file :private-file))
+	       (if (component-load-only component)
+		   (handle-load-only component)
+		   (push component fasls)))))
+    (let* ((system (etypecase system
+		     (mk::component
+		      (ecase (mk::component-type system)
+			(:defsystem system)))
+		     (symbol (mk:find-system system))
+		     (string (mk:find-system system))))
+	   (pathname (%concated-fasl-pathname system defaults))
+	   #-lispworks
+	   (buf (make-array 2048 :element-type '(unsigned-byte 8)))
+	   (recursively-handle-deps
+	    (if (boundp '*recursively-handle-deps*) ;XXX FIX USES
+		(if (eql (symbol-value '*recursively-handle-deps*) :default)
+		    mk::*operations-propagate-to-subsystems*
+		    (symbol-value '*recursively-handle-deps*))
+		nil)))
+      (%mk-traverse system #'handle-one nil recursively-handle-deps)
+      #+lispworks
+      (labels ((addobj (path) (SCM::CONCATENATE-OBJECT-FILE path))
+	       (addcom (component)
+		 (let ((file (mk::component-full-pathname component :binary)))
+		   (assert file)
+		   (addobj file)))
+	       (addall () (mapcar #'addcom (nreverse fasls))))
+	(SCM::INVOKE-WITH-CONCATENATED-FASL-FILE
+	 #'addall pathname COMPILER:*HOST-TARGET-MACHINE*)
+        pathname)
+      #-lispworks
+      (with-open-file (out pathname :element-type '(unsigned-byte 8)
+			   :direction :output :if-exists :supersede
+			   :if-does-not-exist :create)
+	(loop for component in (nreverse fasls)
+	      for file = (mk::component-full-pathname component :binary)
+	      do (assert file)
+	      (restart-case
+		  (with-open-file (in (truename file)
+				      :element-type '(unsigned-byte 8))
+		    (format t "~%; ~s" file)
+		    (loop as x = (read-sequence buf in)
+			  until (= x 0)
+			  do (write-sequence buf out :end x)))
+		(skip-this-file () :report "Skip this file.")))
+	pathname))))
+
+
 ;;;===========================================================================
 ;;; Running the operations.
 
