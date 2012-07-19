@@ -1,7 +1,6 @@
-;;; -*- Mode: Lisp; Package: make -*-
-;;; -*- Mode: CLtL; Syntax: Common-Lisp -*-
+;;; -*- Mode: Lisp; Package: MAKE; Syntax: Common-Lisp -*-
 
-;;; DEFSYSTEM 3.6 Interim.
+;;; DEFSYSTEM 3.8 Interim.
 
 ;;; defsystem.lisp --
 
@@ -28,11 +27,10 @@
 ;;; Originally written by Mark Kantrowitz, School of Computer Science,
 ;;; Carnegie Mellon University, October 1989.
 
-;;; MK:DEFSYSTEM 3.6 Interim
-;;;
 ;;; Copyright (c) 1989 - 1999 Mark Kantrowitz. All rights reserved.
 ;;;               1999 - 2005 Mark Kantrowitz and Marco Antoniotti. All
 ;;;                           rights reserved.
+;;;               2005 - 2012 Marco Antoniotti. All rights reserved.
 
 ;;; Use, copying, modification, merging, publishing, distribution
 ;;; and/or sale of this software, source and/or binary files and
@@ -834,9 +832,11 @@
 ;;; Massage CLtL2 onto *features* **
 ;;; ********************************
 ;;; Let's be smart about CLtL2 compatible Lisps:
-(eval-when (compile load eval)
+
+(eval-when (:compile-toplevel :load-toplevel :execute)
   #+(or (and allegro-version>= (version>= 4 0)) :mcl :sbcl)
   (pushnew :cltl2 *features*))
+
 
 ;;; ********************************
 ;;; Provide/Require/*modules* ******
@@ -870,6 +870,7 @@
       :sbcl
       :cormanlisp
       :scl
+      :clozure-common-lisp
       (and allegro-version>= (version>= 4 1)))
 (eval-when #-(or :lucid)
            (:compile-toplevel :load-toplevel :execute)
@@ -993,9 +994,6 @@
 #+(or clisp cormanlisp ecl (and gcl defpackage) sbcl)
 (defpackage "MAKE" (:use "COMMON-LISP") (:nicknames "MK"))
 
-#-(or :sbcl :cltl2 :lispworks :ecl :scl)
-(in-package "MAKE" :nicknames '("MK"))
-
 ;;; For CLtL2 compatible lisps...
 #+(and :excl :allegro-v4.0 :cltl2)
 (defpackage "MAKE" (:nicknames "MK" "make" "mk") (:use :common-lisp)
@@ -1019,6 +1017,12 @@
 #+:mcl
 (defpackage "MAKE" (:nicknames "MK") (:use "COMMON-LISP")
   (:import-from ccl *modules* provide require))
+
+#+:clozure-common-lisp
+(eval-when (:load-toplevel :compile-toplevel :execute)
+  (defpackage "MAKE" (:nicknames "MK") (:use "COMMON-LISP")
+    (:import-from ccl *modules* provide require)))
+
 
 ;;; *** Marco Antoniotti <marcoxa@icsi.berkeley.edu> 19951012
 ;;; The code below, is originally executed also for CMUCL. However I
@@ -1045,8 +1049,12 @@
 (defpackage :make (:use :common-lisp)
   (:nicknames :mk))
 
-#+(or :cltl2 :lispworks :scl)
-(eval-when (compile load eval)
+
+#-(or :sbcl :cltl2 :lispworks :ecl :scl :clozure-common-lisp)
+(in-package "MAKE" :nicknames '("MK"))
+
+#+(or :cltl2 :lispworks :scl :clozure-common-lisp)
+(eval-when (:compile-toplevel :load-toplevel :execute)
   (in-package "MAKE"))
 
 #+ecl
@@ -1106,7 +1114,7 @@
 ;;; the compile form, so that you can't use a defvar with a default value and
 ;;; then a succeeding export as well.
 
-(eval-when (compile load eval)
+(eval-when (:compile-toplevel :load-toplevel :execute)
   (defvar *special-exports* nil)
   (defvar *exports* nil)
   (defvar *other-exports* nil)
@@ -1194,7 +1202,7 @@
 ;;; ********************************
 ;;; Defsystem Version **************
 ;;; ********************************
-(defparameter *defsystem-version* "3.6 Interim, 2008-12-18"
+(defparameter *defsystem-version* "3.8 Interim, 20120719"
   "Current version number/date for MK:DEFSYSTEM.")
 
 
@@ -1281,7 +1289,10 @@ on the particular lisp compiler version being used.")
     ;; Somehow it is better to qualify default-directory in CMU with
     ;; the appropriate package (i.e. "EXTENSIONS".)
     ;; Same for Allegro.
-    #+(and :lispworks (not :lispworks4) (not :lispworks5))
+    #+(and :lispworks
+           (not :lispworks4)
+           (not :lispworks5)
+           (not :lispworks6))
     ,(multiple-value-bind (major minor)
 			  #-:lispworks-personal-edition
 			  (system::lispworks-version)
@@ -1297,7 +1308,7 @@ on the particular lisp compiler version being used.")
 					 (find-package "SYSTEM")))
            (find-symbol "*CURRENT-WORKING-DIRECTORY*"
                         (find-package "LW"))))
-    #+(or :lispworks4 :lispworks5)
+    #+(or :lispworks4 :lispworks5 :lispworks6)
     (hcl:get-working-directory)
     ;; Home directory
     #-sbcl
@@ -1397,7 +1408,8 @@ and up to date.")
 ;;; ********************************
 
 ;;; Massage people's *features* into better shape.
-(eval-when (compile load eval)
+
+(eval-when (:compile-toplevel :load-toplevel :execute)
   (dolist (feature *features*)
     (when (and (symbolp feature)   ; 3600
                (equal (symbol-name feature) "CMU"))
@@ -1522,7 +1534,7 @@ fasl.")
 
 ;;; mc 11-Apr-91: Bashes MCL's point reader, so commented out.
 #-:mcl
-(eval-when (compile load eval)
+(eval-when (:compile-toplevel :load-toplevel :execute)
   ;; Define #@"foo" as a shorthand for (afs-binary-directory "foo").
   ;; For example,
   ;;    <cl> #@"foo"
@@ -1611,6 +1623,13 @@ s/^[^M]*IRIX Execution Environment 1, *[a-zA-Z]* *\\([^ ]*\\)/\\1/p\\
   )
 
 
+(defun afs-component (machine software &optional lisp)
+  (format nil "~@[~A~]~@[_~A~]~@[_~A~]"
+	    machine
+	    (or software "mach")
+	    lisp))
+
+
 (defun afs-binary-directory (root-directory)
   ;; Function for obtaining the directory AFS's @sys feature would have
   ;; chosen when we're not in AFS. This function is useful as the argument
@@ -1638,6 +1657,8 @@ s/^[^M]*IRIX Execution Environment 1, *[a-zA-Z]* *\\([^ ]*\\)/\\1/p\\
 	    (if *multiple-lisp-support*
 		(afs-component machine software lisp)
 	      (afs-component machine software)))))
+
+
 
 (defun afs-source-directory (root-directory &optional version-flag)
   ;; Function for obtaining the directory AFS's @sys feature would have
@@ -1669,11 +1690,7 @@ s/^[^M]*IRIX Execution Environment 1, *[a-zA-Z]* *\\([^ ]*\\)/\\1/p\\
       dir))
 
 
-(defun afs-component (machine software &optional lisp)
-  (format nil "~@[~A~]~@[_~A~]~@[_~A~]"
-	    machine
-	    (or software "mach")
-	    lisp))
+
 
 
 (defvar *machine-type-alist* (make-hash-table :test #'equal)
@@ -3158,13 +3175,11 @@ used with caution.")
   (unless (find :source-pathname definition-body)
     (setf definition-body
 	  (list* :source-pathname
-		 '(when #-gcl *load-pathname* #+gcl si::*load-pathname*
-                    (make-pathname :name nil
-                                   :type nil
-                                   :defaults
-                                   #-gcl *load-pathname*
-                                   #+gcl si::*load-pathname*
-                                   ))
+		 '(when *load-pathname*
+		   (make-pathname :name nil
+                                  :type nil
+                                  :defaults *load-pathname*
+		    ))
 		 definition-body)))
   `(create-component :defsystem ',name
                      ,(preprocess-component-definition definition-body)
@@ -3841,7 +3856,8 @@ used with caution.")
 
 (defun compile-system (name &key force
 			    (version *version*)
-			    (test *oos-test*) (verbose *oos-verbose*)
+			    (test *oos-test*)
+                            (verbose *oos-verbose*)
 			    (load-source-instead-of-binary
 			     *load-source-instead-of-binary*)
 			    (load-source-if-no-binary
@@ -3957,22 +3973,27 @@ used with caution.")
       (undefsystem cname)
       (let* ((*reload-systems-from-disk* t)
 	     (system-component
-	      (find-system (component-name component)
-			   :load
+              
+              ;; (find-system (component-name component) :load)
 
-			   ;; Let's not supply the def-pname
-			   ;; yet.
-			   #+not-yet
-			   (merge-pathname
-			    (make-pathname :name cname
-					   :type "system"
-					   :directory ())
-			    (component-full-pathname component
-						     :source))
-
-
-			   ))
-	     )
+              #| Marco Antoniotti 20090416: may break in strange ways due to circularities. |#
+              (ecase (component-type component)
+                (:system
+                 (find-system (component-name component) :load))
+                (:subsystem
+                 #|
+                 (warn "Circular dependencies may happen with ~
+                        :SUBSYSTEM components.")|#
+                 (find-system (component-name component) :load
+                              (merge-pathnames
+                               (make-pathname :name cname
+                                              :type "system"
+                                              :directory nil)
+                               (component-full-pathname component
+                                                        :source))
+                              )))
+              )
+             )
 	;; Now we have a problem.
 	;; We have just ensured that a system definition is
 	;; loaded, however, the COMPONENT at hand is different
@@ -4029,7 +4050,20 @@ used with caution.")
 	    (ensure-external-system-def-loaded component))
 
 	  (when (or (eq type :defsystem) (eq type :system))
-	    (operate-on-system-dependencies component operation force))
+            (handler-case
+                (operate-on-system-dependencies component
+                                                operation
+                                                force)
+              (error (e)
+                (tell-user-generic
+                 (format nil "Some system dependency for ~A failed."
+                         (component-name component)))
+                (if (component-non-required-p component)
+                    (tell-user-generic
+                     (format nil "Dependency ignored as ~A in non required."
+                             (component-name component)))
+                    (error e))
+              )))
 
 	  ;; Do any compiler proclamations
 	  (when (component-proclamations component)
@@ -4153,11 +4187,15 @@ used with caution.")
               ((listp system)
                ;; If the SYSTEM is a list then its contents are as follows.
                ;;
-               ;;    (<name> <definition-pathname> <action> &optional <version>)
+               ;;    (<name> &key <definition-pathname> <action>
+               ;;                 <version> (<required-p> t)
                ;;
 
-               (destructuring-bind (system-name definition-pathname action
-                                                &optional version)
+               (destructuring-bind (system-name &key
+                                                definition-pathname
+                                                action
+                                                version
+                                                (required-p t))
                    system
                  (tell-user-require-system
                   (if (and (null system-name)
@@ -4165,11 +4203,29 @@ used with caution.")
                       action
                       system)
                   component)
-                 (or *oos-test* (new-require system-name
-                                             nil
-                                             (eval definition-pathname)
-                                             action
-                                             (or version *version*)))))
+                 (handler-case
+                     (or *oos-test*
+                         (new-require system-name
+                                      nil
+                                      (eval definition-pathname)
+                                      action
+                                      (or version *version*)))
+                   (error (e)
+                     (tell-user-generic
+                      (format nil "System dependency ~S for ~A failed."
+                              system
+                              (component-name component)))
+                     (if required-p
+                         (error e)
+                         (tell-user-generic
+                          "Failed dependency ignored as non required."))
+                     )
+                   #|
+                   (error (mce)
+                     (when required-p (error mce)))|#
+                   )
+                 ))
+
               ((and (component-p system)
                     (not (member (component-type system)
                                  '(:defsystem :subsystem :system))))
@@ -4179,6 +4235,7 @@ used with caution.")
                (tell-user-require-system system component)
                (or *oos-test* (new-require system))))
         ))))
+
 
 ;;; Modules can depend only on siblings. If a module should depend
 ;;; on an uncle, then the parent module should depend on that uncle
@@ -4267,44 +4324,39 @@ used with caution.")
 		    (setq module-name (namestring module-name)))
 	       (find (string module-name)
 		     *modules* :test #'string=))
-    (handler-case
-        (cond (pathname
-	       (funcall *old-require* module-name pathname))
-	      ;; If the system is defined, load it.
-	      ((find-system module-name :load-or-nil definition-pname)
-	       (operate-on-system
-	        module-name :load
-	        :force *force*
-	        :version version
-	        :test *oos-test*
-	        :verbose *oos-verbose*
-	        :load-source-if-no-binary *load-source-if-no-binary*
-	        :bother-user-if-no-binary *bother-user-if-no-binary*
-	        :compile-during-load *compile-during-load*
-	        :load-source-instead-of-binary *load-source-instead-of-binary*
-	        :minimal-load *minimal-load*))
-	      ;; If there's a default action, do it. This could be a progn which
-	      ;; loads a file that does everything.
-	      ((and default-action
-		    (eval default-action)))
-	      ;; If no system definition file, try regular require.
-	      ;; had last arg  PATHNAME, but this wasn't really necessary.
-	      ((funcall *old-require* module-name))
-	      ;; If no default action, print a warning or error message.
-	      (t
-	       #||
+    (cond (pathname
+           (funcall *old-require* module-name pathname))
+
+          ;; If the system is defined, load it.
+          ((find-system module-name :load-or-nil definition-pname)
+           (operate-on-system
+            module-name :load
+            :force *force*
+            :version version
+            :test *oos-test*
+            :verbose *oos-verbose*
+            :load-source-if-no-binary *load-source-if-no-binary*
+            :bother-user-if-no-binary *bother-user-if-no-binary*
+            :compile-during-load *compile-during-load*
+            :load-source-instead-of-binary *load-source-instead-of-binary*
+            :minimal-load *minimal-load*))
+
+          ;; If there's a default action, do it. This could be a progn which
+          ;; loads a file that does everything.
+          ((and default-action
+                (eval default-action)))
+
+          ;; If no system definition file, try regular require.
+          ;; had last arg  PATHNAME, but this wasn't really necessary.
+          ((funcall *old-require* module-name))
+
+          ;; If no default action, print a warning or error message.
+          (t
+           #||
 	       (format t "~&Warning: System ~A doesn't seem to be defined..."
 	               module-name)
 	       ||#
-	       (error 'missing-system :name module-name)))
-      (missing-module (mmc) (signal mmc)) ; Resignal.
-      ;; madhu 080902 a missing-system is incorrectly signalled when
-      ;; mk:oos throws an error.
-      #+nil
-      (error (e)
-             (declare (ignore e))
-	     ;; Signal a (maybe wrong) MISSING-SYSTEM.
-	     (error 'missing-system :name module-name)))
+           (error 'missing-system :name module-name)))
     ))
 
 
@@ -4341,7 +4393,7 @@ used with caution.")
     (defmacro require-as-macro (module-name
 				&optional pathname definition-pname
 				default-action (version '*version*))
-      `(eval-when (compile load eval)
+      `(eval-when (:compile-toplevel :load-toplevel :execute)
 	 (new-require ,module-name ,pathname ,definition-pname
 		      ,default-action ,version)))
     (setf (macro-function #-(and :excl :sbcl :allegro-v4.0) 'lisp:require
@@ -4358,12 +4410,16 @@ used with caution.")
 (unless *old-require*
   (setf *old-require*
 	(symbol-function
-	 #-(or (and :excl :allegro-v4.0) :mcl :sbcl :lispworks) 'lisp:require
+	 #-(or (and :excl :allegro-v4.0)
+               :mcl
+               :sbcl
+               :lispworks
+               :clozure-common-lisp) 'lisp:require
 	 #+(and :excl :allegro-v4.0) 'cltl1:require
 	 #+:sbcl 'cl:require
 	 #+:lispworks3.1 'common-lisp::require
 	 #+(and :lispworks (not :lispworks3.1)) 'system::require
-	 #+:openmcl 'cl:require
+	 #+(or :openmcl :clozure-common-lisp)'cl:require
 	 #+(and :mcl (not :openmcl)) 'ccl:require
 	 ))
 
@@ -4372,7 +4428,11 @@ used with caution.")
 	  (ccl:*warn-if-redefine-kernel* nil))
       #-(or (and allegro-version>= (version>= 4 1)) :lispworks)
       (setf (symbol-function
-	     #-(or (and :excl :allegro-v4.0) :mcl :sbcl :lispworks) 'lisp:require
+	     #-(or (and :excl :allegro-v4.0)
+                   :mcl
+                   :sbcl
+                   :lispworks
+                   :clozure-common-lisp) 'lisp:require
 	     #+(and :excl :allegro-v4.0) 'cltl1:require
 	     #+:lispworks3.1 'common-lisp::require
 	     #+:sbcl 'cl:require
@@ -4484,8 +4544,13 @@ used with caution.")
     (or (when language (language-binary-extension language))
 	(cdr *filename-extensions*))))
 
-(defmacro define-language (name &key compiler loader
-				source-extension binary-extension)
+(defmacro define-language (name
+                           &key
+                           compiler
+                           loader
+                           (source-extension (car *filename-extensions*))
+                           (binary-extension (cdr *filename-extensions*))
+                           )
   (let ((language (gensym "LANGUAGE")))
     `(let ((,language (make-language :name ,name
 				     :compiler ,compiler
@@ -4596,7 +4661,7 @@ output to *trace-output*.  Returns the shell's exit code."
                          (list "-c" command)
                          :input nil
                          :output output))
-
+    
     #+(or cmu scl)
     (ext:process-exit-code
      (ext:run-program shell
@@ -4606,7 +4671,7 @@ output to *trace-output*.  Returns the shell's exit code."
 
     #+allegro
     (excl:run-shell-command command :input nil :output output)
-
+    
     #+(and lispworks win32)
     (system:call-system-showing-output (format nil "cmd /c ~A" command)
                                        :output-stream output)
@@ -4615,7 +4680,7 @@ output to *trace-output*.  Returns the shell's exit code."
     (system:call-system-showing-output command
                                        :shell-type shell
                                        :output-stream output)
-
+    
     #+clisp				;XXX not exactly *trace-output*, I know
     (ext:run-shell-command command :output :terminal :wait t)
 
@@ -5140,7 +5205,7 @@ or does not contain valid compiled code."
 	    (t
 	     nil)))))
 
-(eval-when (load eval)
+(eval-when (:load-toplevel :execute)
 (component-operation :clean    'delete-binaries-operation)
 (component-operation 'clean    'delete-binaries-operation)
 (component-operation :delete-binaries     'delete-binaries-operation)
