@@ -1541,7 +1541,7 @@ fasl.")
 ;;; ********************************
 
 ;;; mc 11-Apr-91: Bashes MCL's point reader, so commented out.
-#-:mcl
+#-(or :allegro :mcl :ecl)
 (eval-when (:compile-toplevel :load-toplevel :execute)
   ;; Define #@"foo" as a shorthand for (afs-binary-directory "foo").
   ;; For example,
@@ -4662,19 +4662,23 @@ which defaults to \"-library\"."
                :mcl
                :sbcl
                :lispworks
-               :clozure-common-lisp) 'lisp:require
+               :clozure-common-lisp
+	       :ecl
+	       )
+	 'lisp:require
 	 #+(and :excl :allegro-v4.0) 'cltl1:require
 	 #+:sbcl 'cl:require
 	 #+:lispworks3.1 'common-lisp::require
 	 #+(and :lispworks (not :lispworks3.1)) 'system::require
 	 #+(or :openmcl :clozure-common-lisp)'cl:require
 	 #+(and :mcl (not :openmcl)) 'ccl:require
+	 #+(and :ecl) 'cl:require
 	 ))
 
   (unless *dont-redefine-require*
     (let (#+(or :mcl (and :CCL (not :lispworks)))
 	  (ccl:*warn-if-redefine-kernel* nil))
-      #-(or (and allegro-version>= (version>= 4 1)) :lispworks)
+      #-(or (and allegro-version>= (version>= 4 1)) :lispworks :ecl)
       (setf (symbol-function
 	     #-(or (and :excl :allegro-v4.0)
                    :mcl
@@ -4704,8 +4708,15 @@ which defaults to \"-library\"."
       #+(and allegro-version>= (version>= 4 1))
       (excl:without-package-locks
        (setf (symbol-function 'lisp:require)
-	 (symbol-function 'new-require))))))
-)
+	 (symbol-function 'new-require)))
+      #+(and :ecl nil)
+      (ext:without-package-locks	; not there in 15.3.7
+	  (setf (symbol-function 'cl:require) (symbol-function 'new-require)))
+      #+ecl
+      (progn (ext:package-lock "CL" nil)
+	     (setf (symbol-function 'cl:require)
+		   (symbol-function 'new-require))
+	     (ext:package-lock "CL" t))))))
 
 
 ;;; Well, let's add some more REQUIRE hacking; specifically for SBCL,
@@ -5008,7 +5019,9 @@ output to *trace-output*.  Returns the shell's exit code."
                                  :output output
 				 :wait t)))
 
-    #-(or openmcl clisp lispworks allegro scl cmu sbcl)
+    #+ecl (nth-value 1 (ext:run-program shell (list "-c" command) :input nil :output output :error output))
+
+    #-(or ecl openmcl clisp lispworks allegro scl cmu sbcl)
     (error "RUN-SHELL-PROGRAM not implemented for this Lisp")
     ))
 
