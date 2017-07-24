@@ -2633,12 +2633,19 @@ D
 ;;; compute-system-path --
 
 (defun compute-system-path (module-name definition-pname)
-  (let* ((module-string-name
+  ;;madhu 170723 - handle retarded module-names "cffi/c2fi" ccl: blows
+  ;;up on probe-file. clisp blows up on make-pathname :name
+  (let* ((module-string-name-0
           (etypecase module-name
             (symbol (string-downcase
                      (string module-name)))
-            (string module-name)))
+            (string (string-downcase module-name))))
 
+	 (module-string-name (let ((p (position #\/ module-string-name-0)))
+			       (if p
+				   "bogus" #+nil
+				   (subseq module-string-name-0 0 p)
+				   module-string-name-0)))
          (file-pathname
 	  (make-pathname :name module-string-name
 			 :type *system-extension*))
