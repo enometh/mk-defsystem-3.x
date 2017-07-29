@@ -3805,6 +3805,21 @@ used with caution.")
 ;;;  mklib
 ;;; *recursively-handle-deps* (TODO ELIM)
 ;;;
+;;; ;madhu 170729: ecl support. ECL cannot concatenate fasls
+;;; directly. Object files have to be built first:
+;;; - bind *ecl-compile-file-system-p* to T when compiling the system
+;;;   to additionally generate .o files
+;;; - mklib has to use the .o files to build the fas files
+;;;
+;;; i.e. (let ((mk::*ecl-compile-file-system-p* t)) (compile-system :foo))
+;;; (mklib :foo :fasl)
+;;; (mklib :foo :shared-library)
+;;; (mklib :foo :static-library)
+;;;
+;;; When making ECL shared or static libraries (for linking with C),
+;;; each library is given its own init function.  Any dashes in the
+;;; system name are replaced with an underscore in the init function
+;;;
 
 (defun %mk-traverse (system function &optional collect-results
 		     *recursively-handle-deps*)
@@ -3829,6 +3844,9 @@ used with caution.")
 			   (format t "Always Skipping deps: skipped ~A."
 				   deps)
 			   nil)
+			  ((eq *recursively-handle-deps* :module)
+			   (warn "deps = ~S component=~S" deps component)
+			   (eq (mk::component-type component) :module))
 			  (*recursively-handle-deps* t)
 			  (t
 			   (restart-case
@@ -3860,7 +3878,10 @@ used with caution.")
 			  (:defsystem system)))
 		       ((or string symbol) (mk:find-system system))))))
 
-(defun system-map-files (system &optional function &key (type :source) &aux ret)
+;; if function is nil return a list of files
+(defun system-map-files (system &optional function &key
+			 recursively-handle-deps
+			 (type :source) &aux ret)
   ;; "Rename as SYSTEM-MAP-PATHNAMES if docstring is ever written."
   (%mk-traverse
    system
@@ -3871,18 +3892,41 @@ used with caution.")
 	 (when arg
 	   (if function
 	       (funcall function (pathname arg))
-	       (push  (pathname arg) ret)))))))
+	       (push  (pathname arg) ret))))))
+
+   nil
+   recursively-handle-deps)
   (nreverse ret))
 
 (defvar *load-concated-fasl-instead* t)
 (defvar *concated-fasl-suffix* "-library")
 
-(defun %concated-fasl-pathname (system &optional (defaults *default-pathname-defaults*))
+(defvar *ecl-compile-file-system-p* nil
+  "If Non-NIL supply :SYSTEM-P to to ecl's COMPILE-FILE to produce a
+  native object file")
+
+(defun ecl-munge-o (pathname)
+  (make-pathname :type "o" :defaults pathname))
+
+(defun %concated-fasl-pathname (system &key (defaults *default-pathname-defaults*) #+ecl (ecl-build-type :fasl))
   (make-pathname
    :name (concatenate 'string
+		      #+ecl
+		      (case ecl-build-type
+			((:shared-library :static-library) "lib")
+			(otherwise ""))
                       (MK::COMPONENT-NAME system)
-                      *concated-fasl-suffix*)
-   :type (or (mk::component-binary-extension system)
+		      (or #+ecl
+			  (when (eq ecl-build-type :exe)
+			    "")
+			  *concated-fasl-suffix*))
+   :type (or #+ecl
+	     (ecase ecl-build-type
+	       ((nil :fasl) "fas")
+	       (:exe "exe")
+	       (:shared-library "so")
+	       (:static-library "a"))
+	     (mk::component-binary-extension system)
              #+cmu
              (c:backend-fasl-file-type c:*target-backend*)
              #-cmu
@@ -3896,20 +3940,24 @@ used with caution.")
                (string (pathname defaults))
                (pathname defaults))))
 
-(defun mklib (system &optional (defaults *default-pathname-defaults*)
-	      &aux fasls)
-  "Creates a concatenated fasl file named \"SYSTEM-LIBRARY.FASL\" from
-the fasl files of the given mk-defsystem system SYSTEM.  The system
-should already be compiled.  The concatenated file is written in the
-DEFAULTS directory.  LIBRARY is taken from *concated-fasl-suffix*
-which defaults to \"-library\"."
+(defun ensure-system (system)
+  (etypecase system
+    (mk::component
+     (ecase (mk::component-type system)
+       (:defsystem system)))
+    (symbol (mk:find-system system))
+    (string (mk:find-system system))))
+
+(defun concated-fasl-list (system &key (recursively-handle-deps t) &aux fasls)
   (labels ((handle-load-only (component)
 	     (assert (find (mk::component-type component)
 			   '(:file :private-file)))
 	     (let* ((source-pathname
 		     (mk::component-full-pathname component :source))
 		    (binary-pathname
-		     (mk::component-full-pathname component :binary))
+		     (progn
+		       #+ecl(error "cannot handle :load-only when building ecl libraries")
+		       (mk::component-full-pathname component :binary)))
 		    (binary-truename (probe-file binary-pathname))
 		    (compilation-required-p
 		     (cond (binary-truename
@@ -3947,23 +3995,45 @@ which defaults to \"-library\"."
 	     (when (find (mk::component-type component) '(:file :private-file))
 	       (if (component-load-only component)
 		   (handle-load-only component)
-		   (push component fasls)))))
-    (let* ((system (etypecase system
-		     (mk::component
-		      (ecase (mk::component-type system)
-			(:defsystem system)))
-		     (symbol (mk:find-system system))
-		     (string (mk:find-system system))))
-	   (pathname (%concated-fasl-pathname system defaults))
-	   #-lispworks
+		   (pushnew component fasls)))))
+    (%mk-traverse (ensure-system system)
+		  #'handle-one
+		  nil
+		  recursively-handle-deps)
+    fasls))
+
+#+nil
+(concated-fasl-list :hello :recursively-handle-deps t)
+
+;madhu 190516
+;;(user::package-add-nicknames "COMPILER" "C")
+(defun mklib (system &key (defaults *default-pathname-defaults*)
+	      (recursively-handle-deps t)
+	      #+(or ecl mkcl) (ecl-build-type :fasl)
+	      #+(or ecl mkcl) init-function-name
+	      #+(or ecl mkcl) build-program-args)
+  "Creates a concatenated fasl file named \"SYSTEM-LIBRARY.FASL\" from
+the fasl files of the given mk-defsystem system SYSTEM.  The system
+should already be compiled.  The concatenated file is written in the
+DEFAULTS directory.  LIBRARY is taken from *concated-fasl-suffix*
+which defaults to \"-library\".
+
+ECL NOTES: If ECL-BUILD-TYPE is :SHARED-LIBRARY or :STATIC-LIBRARY,
+C:BUILD-SHARED-LIBRARY or C:BUILD-SHARED-LIBRARY is called with an
+:INIT-NAME of INIT-FUNCTION-NAME. If unspecified, a name of the form
+`init_lib_<system>' is derived from the system name, after converting
+dashes in the system name to underscores.
+
+In these cases the name of the output file is of the form
+\"LIB<SYSTEM>-LIBRARY.{so,a}\".
+"
+  (let* ((system (ensure-system system))
+	   (pathname (%concated-fasl-pathname
+		      system :defaults defaults
+		      #+ecl :ecl-build-type #+ecl ecl-build-type))
+	   #-(or lispworks ecl)
 	   (buf (make-array 2048 :element-type '(unsigned-byte 8)))
-	   (recursively-handle-deps
-	    (if (boundp '*recursively-handle-deps*) ;XXX FIX USES
-		(if (eql (symbol-value '*recursively-handle-deps*) :default)
-		    mk::*operations-propagate-to-subsystems*
-		    (symbol-value '*recursively-handle-deps*))
-		nil)))
-      (%mk-traverse system #'handle-one nil recursively-handle-deps)
+	 (fasls (concated-fasl-list system :recursively-handle-deps recursively-handle-deps)))
       #+lispworks
       (labels ((addobj (path) (SCM::CONCATENATE-OBJECT-FILE path))
 	       (addcom (component)
@@ -3974,7 +4044,38 @@ which defaults to \"-library\"."
 	(SCM::INVOKE-WITH-CONCATENATED-FASL-FILE
 	 #'addall pathname COMPILER:*HOST-TARGET-MACHINE*)
         pathname)
-      #-lispworks
+
+      ;; for ecl and mkcl - make sure the system is compiled
+      #+(or ecl mkcl)
+      (ecase ecl-build-type
+	((nil :fasl)
+	 (compile-system system))
+	((:shared-library :static-library)
+	 (let ((*operations-propagate-to-subsystems* t)
+	       (*ecl-compile-file-system-p* t))
+	   (make::compile-system system))))
+
+      #+(or ecl mkcl)
+      (apply
+       (ecase ecl-build-type
+	 ((nil :fasl) #'compiler:build-fasl)
+	 (:exe #'compiler:build-program)
+	 (:shared-library #'compiler:build-shared-library)
+	 (:static-library #'compiler:build-static-library))
+       pathname
+       :lisp-files (loop for component in (reverse fasls)
+			 for o = (ecl-munge-o (mk::component-full-pathname
+					  component :binary))
+			 collect o
+			 do (format t "Cating: ~S~&" o ))
+       (append (when (case ecl-build-type
+		       ((:shared-library :static-library) t))
+		 (list :init-name
+		       (or init-function-name
+			   (concatenate 'string "init_lib_"
+					(substitute #\_ #\- (mk::component-name system))))))
+	       build-program-args))
+      #-(or lispworks ecl)
       (with-open-file (out pathname :element-type '(unsigned-byte 8)
 			   :direction :output :if-exists :supersede
 			   :if-does-not-exist :create)
@@ -3989,8 +4090,57 @@ which defaults to \"-library\"."
 			  until (= x 0)
 			  do (write-sequence buf out :end x)))
 		(skip-this-file () :report "Skip this file.")))
-	pathname))))
+	pathname)))
 
+;;;
+;;; ECL EXAMPLE
+;;;
+
+#+ecl
+(defun ecl-mklib (system &optional (ecl-build-type :shared-library)
+		  force-compile
+		  defaults
+		  (recursively-handle-deps t)
+		  init-function-name
+		  build-program-args)
+  ;; RECURSIVELY-HANDLE-DEPS if T bundle everything. if :NEVER bundle
+  ;; nothing. if NIL NIL ask interactively
+  (let ((make::*operations-propagate-to-subsystems* t)
+	(make::*ecl-compile-file-system-p* t))
+    (make::compile-system system :force force-compile))
+  (make::mklib system :ecl-build-type ecl-build-type :defaults defaults
+	       :recursively-handle-deps recursively-handle-deps
+	       :init-function-name init-function-name
+	       :build-program-args build-program-args))
+
+(defun mk-concat-sources (system pathname &optional
+			  make::*recursively-handle-deps*
+			  &key (language :lisp)) ; wont work for grovel etc.
+  "Concatenate the source files of system onto PATHNAME."
+  (declare (special make::*recursively-handle-deps*))
+  (let (list
+	(buf (make-array 2048 :element-type '(unsigned-byte 8))))
+    (flet ((collect-files (component)
+	     (when (and (eq (mk::component-type component) :file)
+			(if language
+			    (eq (mk::component-language component) language)))
+	       (push component list))))
+      (%mk-traverse system #'collect-files nil nil)
+      (with-open-file (out pathname :element-type '(unsigned-byte 8)
+			   :direction :output :if-exists :supersede
+			   :if-does-not-exist :create)
+	(loop for component in (nreverse list)
+	      for file = (mk::component-full-pathname component :source)
+	      do (assert file)
+	      (restart-case
+		  (with-open-file (in (truename file)
+				      :element-type '(unsigned-byte 8))
+		    (format t "~%; ~s" file)
+		    (loop as x = (read-sequence buf in)
+			  until (= x 0)
+			  do (write-sequence buf out :end x)))
+		(skip-this-file () :report "Skip this file.")))
+	pathname))))
 
 ;;;===========================================================================
 ;;; Running the operations.
@@ -5318,8 +5468,7 @@ output to *trace-output*.  Returns the shell's exit code."
   (declare (ignore arg0 verbose))
   ())
 
-
-(defun compile-file-operation (component force)
+(defun compile-file-operation--internal (component force)
   ;; Returns T if the file had to be compiled.
   (let ((must-compile
 	 ;; For files which are :load-only T, loading the file
@@ -5377,6 +5526,62 @@ output to *trace-output*.  Returns the shell's exit code."
 	   nil)
 	  (t nil))))
 
+#+ecl
+(defun compile-file-operation--ecl (component force)
+  "Call compile-file-operation with :system-p t to produce a .o file"
+  (let* ((source-pname (component-full-pathname component :source))
+	 (output-file (ecl-munge-o (component-full-pathname component :binary)))
+	 (must-compile (and (null (component-load-only component)) ; not load-only
+			    (or (find force '(:all :new-source-all t) :test #'eq)
+				(and (find force '(:new-source :new-source-and-dependents)
+					   :test #'eq)
+				     (and (probe-file source-pname)
+					  (or (null (probe-file output-file))
+						(< (file-write-date output-file)
+						   (file-write-date source-pname)))))))))
+
+    (cond ((and must-compile (probe-file source-pname))
+	   (with-tell-user ("Compiling source" component :source)
+	       (ensure-directories-exist
+		(make-pathname
+		 :host (pathname-host output-file)
+		 :directory (pathname-directory output-file)))
+
+	       (or *oos-test*
+		   (apply (compile-function component)
+			  source-pname
+			  :output-file
+			  output-file
+
+			  #+(or :cmu :scl)
+			  :error-file
+
+			  #+(or :cmu :scl)
+			  (and *cmu-errors-to-file*
+			       (component-full-pathname component :error))
+
+			  #+cmu
+			  :error-output
+			  #+cmu
+			  *cmu-errors-to-terminal*
+
+			  :system-p t
+
+			  (component-compiler-options component)
+			  ))
+	   must-compile))
+	  (must-compile
+	   (tell-user "Source file not found. Not compiling"
+		      component :source :no-dots :force)
+	   nil)
+	  (t nil))))
+
+(defun compile-file-operation (component force)
+  (compile-file-operation--internal component force)
+  ;; ;madhu 170729 ecl: additionally compile a ".o"
+  #+ecl
+  (if *ecl-compile-file-system-p*
+      (compile-file-operation--ecl component force)))
 
 ;;; compiled-file-p --
 ;;; See CLOCC/PORT/sys.lisp:compiled-file-p
