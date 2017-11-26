@@ -3006,22 +3006,29 @@ used with caution.")
 			   ; exception as one cannot rely on
 			   ; component-name there. (silly argument for
 			   ; pathname-name error)
+			   ;;madhu 080206 (fix from marcoxa)
+			   ;;madhu 170724 give ecl a chance to handle
+			   ;; files with periods in them (:file
+			   ;; "glib.package")
 			   :name
-                           ;;madhu 080206 (fix from marcoxa)
-                           (or (pathname-name pathname
-					      #+scl :case
-					      #+scl :common
-					      )
-			       (component-name component))
-			   #+MADHU-OLDER-BOGUS-FIX
-			   (if (or
-				(eq (component-type component) :private-file)
-				(null (pathname-type pathname)))
-			       (pathname-name pathname
-					      #+scl :case
-					      #+scl :common
-					      )	; XXX>
-			       (component-name component))
+			   (or
+			    ;; handle (:file "src/package")
+			    ;; handle (:file "glib.package")
+			    ;; handle (:file "src/glib.package")
+			    (cond ((find #\. (component-name component))
+				   (cond ((find #\/ (component-name component))
+					  (file-namestring
+					   (component-name component)))
+					 (t (component-name component))))
+				  (t
+				   (cond ((find #\/ (component-name component))
+					  nil)
+					 (t nil))))
+			    (pathname-name pathname
+                                           #+scl :case
+                                           #+scl :common
+                                           )
+                            (component-name component))
 			   :type
 			   #-scl (component-extension component type)
 			   #+scl (string-upcase
@@ -4232,7 +4239,7 @@ In these cases the name of the output file is of the form
 					 '(:system :defsystem :subsystem)))
                             name
                             (find-system name :load))))
-	    #-(or CMU CLISP :sbcl :lispworks :cormanlisp scl)
+	    #-(or CMU CLISP :sbcl :lispworks :cormanlisp scl MKCL)
 	    (declare (special *compile-verbose* #-MCL *compile-file-verbose*)
 		     #-openmcl (ignore *compile-verbose*
 				       #-MCL *compile-file-verbose*)
@@ -4809,6 +4816,7 @@ In these cases the name of the output file is of the form
                :lispworks
                :clozure-common-lisp
 	       :ecl
+	       :mkcl
 	       )
 	 'lisp:require
 	 #+(and :excl :allegro-v4.0) 'cltl1:require
@@ -4817,13 +4825,13 @@ In these cases the name of the output file is of the form
 	 #+(and :lispworks (not :lispworks3.1)) 'system::require
 	 #+(or :openmcl :clozure-common-lisp)'cl:require
 	 #+(and :mcl (not :openmcl)) 'ccl:require
-	 #+(and :ecl) 'cl:require
+	 #+(or :ecl :mkcl) 'cl:require
 	 ))
 
   (unless *dont-redefine-require*
     (let (#+(or :mcl (and :CCL (not :lispworks)))
 	  (ccl:*warn-if-redefine-kernel* nil))
-      #-(or (and allegro-version>= (version>= 4 1)) :lispworks :ecl)
+      #-(or (and allegro-version>= (version>= 4 1)) :lispworks :ecl :mkcl)
       (setf (symbol-function
 	     #-(or (and :excl :allegro-v4.0)
                    :mcl
@@ -4838,6 +4846,12 @@ In these cases the name of the output file is of the form
 	     #+(and :mcl (not :openmcl)) 'ccl:require
 	     )
 	    (symbol-function 'new-require))
+      #+:mkcl
+      (progn
+	(si:reopen-package "CL")
+	(setf (symbol-function 'cl:require) (symbol-function 'new-require))
+	(si:close-package "CL")
+	)
       #+:lispworks
       (let ((warn-packs system::*packages-for-warn-on-redefinition*))
 	(declare (special system::*packages-for-warn-on-redefinition*))
@@ -4959,6 +4973,17 @@ In these cases the name of the output file is of the form
   (unless (find form sys::*require-search-list* :test #'equal)
     (setq sys::*require-search-list*
 	  (append sys::*require-search-list* (list form)))))
+
+#+mkcl
+(progn
+(defun mkcl-mk-defsystem-module-provider (name)
+  (let ((module-name (string-downcase (string name))))
+    (when (mk:find-system module-name :load-or-nil)
+      (mk:load-system module-name
+		      :compile-during-load t
+		      :verbose nil))))
+
+(pushnew 'mkcl-mk-defsystem-module-provider mk-ext:*module-provider-functions*))
 
 
 ;;; ********************************
@@ -5140,6 +5165,12 @@ output to *trace-output*.  Returns the shell's exit code."
                       :input nil
                       :output output))
 
+    #+(and mkcl (not windows))
+    (nth-value 1 (mkcl:run-program shell (list "-c" command) :input nil :output output))
+
+    #+(and mkcl windows)
+    (nth-value 1 (mkcl:run-program "cmd" (list "/c" command) :input nil :output output))
+
     #+allegro
     (excl:run-shell-command command :input nil :output output)
     
@@ -5167,7 +5198,7 @@ output to *trace-output*.  Returns the shell's exit code."
     #+ecl
     (list 'ext:run-program shell (list "-c" command) :input nil :output output :error output)
 
-    #-(or ecl openmcl clisp lispworks allegro scl cmu sbcl)
+    #-(or ecl openmcl clisp lispworks allegro mkcl scl cmu sbcl)
     (error "RUN-SHELL-PROGRAM not implemented for this Lisp")
     ))
 
