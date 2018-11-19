@@ -558,6 +558,9 @@
 ;;;
 ;;; 2008-09-12 dsm  allegro-module-provider hack
 ;;;
+;;; 2018-11-18 dsm  only set component-root-dir for subsystems, modules,
+;;;                 files if not defined in the defsystem form.
+;;;
 
 ;;;---------------------------------------------------------------------------
 ;;; ISI Comments
@@ -3363,8 +3366,10 @@ used with caution.")
 		   (component-name component)))))
     ((:module :subsystem)			; Pathname relative to parent.
      ;; Inherit root-dir from parent
-     (setf (component-root-dir component pathname-type)
-	   (component-root-dir parent pathname-type))
+     (unless (component-root-dir component pathname-type)
+       ;; unless defined ;madhu 181119
+       (setf (component-root-dir component pathname-type)
+	     (component-root-dir parent pathname-type)))
      ;; Tack the relative-dir onto the pathname
      (setf (component-pathname component pathname-type)
 	   (or (when (and (eq pathname-type :binary)
@@ -3377,8 +3382,10 @@ used with caution.")
 		    (component-name component))))))
     (:file				; Pathname relative to parent.
      ;; Inherit root-dir from parent
-     (setf (component-root-dir component pathname-type)
-	   (component-root-dir parent pathname-type))
+     (unless (component-root-dir component pathname-type)
+       ;; unless defined ;madhu 181119
+       (setf (component-root-dir component pathname-type)
+	     (component-root-dir parent pathname-type)))
      ;; If *SOURCE-PATHNAME-DEFAULT* or *BINARY-PATHNAME-DEFAULT* is "",
      ;; then COMPONENT-SOURCE-PATHNAME or COMPONENT-BINARY-PATHNAME could
      ;; wind up being "", which is wrong for :file components. So replace
