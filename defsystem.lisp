@@ -561,6 +561,9 @@
 ;;; 2018-11-18 dsm  only set component-root-dir for subsystems, modules,
 ;;;                 files if not defined in the defsystem form.
 ;;;
+;;; 2018-12-24 dsm  bail on read-char-wait on non-interactive streams
+;;;                 (slime)
+;;;
 
 ;;;---------------------------------------------------------------------------
 ;;; ISI Comments
@@ -3739,14 +3742,22 @@ used with caution.")
 (defun read-char-wait (&optional (timeout 20) input-stream
                                  (eof-error-p t) eof-value
                                  &aux peek)
-  (do ((start (internal-real-time-in-seconds)))
-      ((or (setq peek (listen input-stream))
-           (< (+ start timeout) (internal-real-time-in-seconds)))
-       (when peek
-         ;; was read-char-no-hang
-         (read-char input-stream eof-error-p eof-value)))
-    (unless (zerop *sleep-amount*)
-      (sleep *sleep-amount*))))
+  (if (ignore-errors (interactive-stream-p input-stream)) ; blows on ecl
+      (do ((start (internal-real-time-in-seconds)))
+	  ((or (setq peek (listen input-stream))
+               (< (+ start timeout) (internal-real-time-in-seconds)))
+	   (when peek
+	     ;; was read-char-no-hang
+	     (read-char input-stream eof-error-p eof-value)))
+	(unless (zerop *sleep-amount*)
+	  (sleep *sleep-amount*)))
+      ;;else
+      (if eof-error-p
+	  (error "mk::read-char-wait on non-interactive stream")
+	  (progn (when *oos-verbose*
+		   (format t "mk::read-char-wait on non-interactive-stream ~S~&"
+			   input-stream)
+		   eof-value)))))
 
 
 ;;; Lots of lisps, especially those that run on top of UNIX, do not get
