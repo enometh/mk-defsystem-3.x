@@ -564,6 +564,9 @@
 ;;; 2018-12-24 dsm  bail on read-char-wait on non-interactive streams
 ;;;                 (slime)
 ;;;
+;;; 2018-12-24 dsm  allow :empty values for :source-extension and
+;;;                 :binary-extension
+;;;
 
 ;;;---------------------------------------------------------------------------
 ;;; ISI Comments
@@ -3104,20 +3107,24 @@ used with caution.")
 	(t (error "~&; Illegal version ~S" version))))
 
 
-(defun component-extension (component type &key local)
+(defun component-extension-i (component type &key local)
   (ecase type
     (:source (or (component-source-extension component)
 		 (unless local
 		   (default-source-extension component)) ; system default
-                 ;; (and (component-language component))
-                 ))
+		 ;; (and (component-language component))
+		 ))
     (:binary (or (component-binary-extension component)
 		 (unless local
 		   (default-binary-extension component)) ; system default
-                 ;; (and (component-language component))
-                 ))
+		 ;; (and (component-language component))
+		 ))
     (:error  *compile-error-file-type*)))
 
+;madhu 181224
+(defun component-extension (component type &key local)
+  (let ((ret (component-extension-i component type :local local)))
+    (if (eq ret :empty) nil ret)))
 
 (defsetf component-extension (component type) (value)
   `(ecase ,type
@@ -3291,7 +3298,7 @@ used with caution.")
 
   ;; Set up extension defaults
   (setf (component-extension component :source)
-	(or (component-extension component :source
+	(or (component-extension-i component :source
                                  :local #| (component-language component) |#
                                  t
                                  ) ; local default
@@ -3300,7 +3307,7 @@ used with caution.")
 	    (when parent		; parent's default
 	      (component-extension parent :source))))
   (setf (component-extension component :binary)
-	(or (component-extension component :binary
+	(or (component-extension-i component :binary
                                  :local #| (component-language component) |#
                                  t
                                  ) ; local default
@@ -6142,5 +6149,46 @@ nil)
     (excl:run-shell-command (format nil "etags ~{~a ~}" files-in-system))
     (format t "done.~%")))
 
+
+;madhu 181224
+;;
+;; :LANGUAGE STATIC-FILE
+;;
+
+;; (LOAD filespec &rest args &key verbose print if-does-not-exist external-format) => generalized-boolean
+(defun mk-static-file-loader (filespec &rest args)
+  (format t "~S~%" `(mk-static-file-loader ,filespec ,@args))
+  (values t))
+
+;; (COMPILE-FILE input-file &key output-file verbose print external-format) => output-truename, warnings-p, failure-p
+(defun mk-static-file-compiler (input-file &rest args &key output-file &allow-other-keys)
+  (format t "~S~%" `(mk-static-file-compiler ,input-file ,@args))
+  (values (probe-file output-file) nil nil))
+
+(mk:define-language :static-file
+		    :loader 'mk-static-file-loader
+		    :compiler 'mk-static-file-compiler
+		    :source-extension :empty
+		    :binary-extension :empty)
+
+(defun mk::find-component (base path)
+  (when (setq base (typecase base
+		     (mk::component base)
+		     (t (mk:find-system base))))
+    (if (atom path) (setq path (list path)))
+    (let ((components (mk::component-components base)))
+      (when components
+	(loop (cond ((or (endp path) (endp components))
+		     (return nil))
+		    ((equal (mk::canonicalize-component-name (car components))
+			    (if (stringp (car path))
+				(car path)
+				(string-downcase (string (car path)))))
+		     (cond ((cdr path)
+			    (setq components (mk::component-components
+					      (car components)))
+			    (setq path (cdr path)))
+			   (t (return (car components)))))
+		(t (setq components (cdr components)))))))))
 
 ;;; end of file -- defsystem.lisp --
