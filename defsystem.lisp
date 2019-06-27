@@ -567,6 +567,12 @@
 ;;; 2018-12-24 dsm  allow :empty values for :source-extension and
 ;;;                 :binary-extension
 ;;;
+;;; 2019-05-17 dsm  mkcl-1.1.1
+;;;
+;;; 2019-06-27 dsm  fix load-file-operation for static-file: mkcl's
+;;;                 file-write-date gives an error on a dummy load op
+;;;                 on a non-existent file
+;;;
 
 ;;;---------------------------------------------------------------------------
 ;;; ISI Comments
@@ -883,6 +889,7 @@
       :cormanlisp
       :scl
       :clozure-common-lisp
+      :ecl
       :mkcl
       (and allegro-version>= (version>= 4 1)))
 (eval-when #-(or :lucid)
@@ -1550,7 +1557,7 @@ fasl.")
 ;;; ********************************
 
 ;;; mc 11-Apr-91: Bashes MCL's point reader, so commented out.
-#-(or :allegro :mcl :ecl)
+#-(or :allegro :mcl :ecl :mkcl)
 (eval-when (:compile-toplevel :load-toplevel :execute)
   ;; Define #@"foo" as a shorthand for (afs-binary-directory "foo").
   ;; For example,
@@ -3935,24 +3942,26 @@ used with caution.")
 
 (defvar *ecl-compile-file-system-p* nil
   "If Non-NIL supply :SYSTEM-P to to ecl's COMPILE-FILE to produce a
-  native object file")
+  native object file.
+For MKCL supply :FASL-P NIL to MKCL's COMPILE-FILE
+")
 
 (defun ecl-munge-o (pathname)
   (make-pathname :type "o" :defaults pathname))
 
-(defun %concated-fasl-pathname (system &key (defaults *default-pathname-defaults*) #+ecl (ecl-build-type :fasl))
+(defun %concated-fasl-pathname (system &key (defaults *default-pathname-defaults*) #+(or ecl mkcl) (ecl-build-type :fasl))
   (make-pathname
    :name (concatenate 'string
-		      #+ecl
+		      #+(or ecl mkcl)
 		      (case ecl-build-type
 			((:shared-library :static-library) "lib")
 			(otherwise ""))
                       (MK::COMPONENT-NAME system)
-		      (or #+ecl
+		      (or #+(or ecl mkcl)
 			  (when (eq ecl-build-type :exe)
 			    "")
 			  *concated-fasl-suffix*))
-   :type (or #+ecl
+   :type (or #+(or ecl mkcl)
 	     (ecase ecl-build-type
 	       ((nil :fasl) "fas")
 	       (:exe "exe")
@@ -3988,7 +3997,7 @@ used with caution.")
 		     (mk::component-full-pathname component :source))
 		    (binary-pathname
 		     (progn
-		       #+ecl(error "cannot handle :load-only when building ecl libraries")
+		       #+(or ecl mkcl)(error "cannot handle :load-only when building ecl libraries")
 		       (mk::component-full-pathname component :binary)))
 		    (binary-truename (probe-file binary-pathname))
 		    (compilation-required-p
@@ -4062,8 +4071,8 @@ In these cases the name of the output file is of the form
   (let* ((system (ensure-system system))
 	   (pathname (%concated-fasl-pathname
 		      system :defaults defaults
-		      #+ecl :ecl-build-type #+ecl ecl-build-type))
-	   #-(or lispworks ecl)
+		      #+(or ecl mkcl) :ecl-build-type #+(or ecl mkcl) ecl-build-type))
+	   #-(or lispworks ecl mkcl)
 	   (buf (make-array 2048 :element-type '(unsigned-byte 8)))
 	 (fasls (concated-fasl-list system :recursively-handle-deps recursively-handle-deps)))
       #+lispworks
@@ -4095,7 +4104,8 @@ In these cases the name of the output file is of the form
 	 (:shared-library #'compiler:build-shared-library)
 	 (:static-library #'compiler:build-static-library))
        pathname
-       :lisp-files (loop for component in (reverse fasls)
+       #+ecl :lisp-files
+       #+mkcl :lisp-object-files (loop for component in (reverse fasls)
 			 for o = (ecl-munge-o (mk::component-full-pathname
 					  component :binary))
 			 collect o
@@ -4107,7 +4117,7 @@ In these cases the name of the output file is of the form
 			   (concatenate 'string "init_lib_"
 					(substitute #\_ #\- (mk::component-name system))))))
 	       build-program-args))
-      #-(or lispworks ecl)
+      #-(or lispworks ecl mkcl)
       (with-open-file (out pathname :element-type '(unsigned-byte 8)
 			   :direction :output :if-exists :supersede
 			   :if-does-not-exist :create)
@@ -4128,7 +4138,7 @@ In these cases the name of the output file is of the form
 ;;; ECL EXAMPLE
 ;;;
 
-#+ecl
+#+(or ecl mkcl)
 (defun ecl-mklib (system &optional (ecl-build-type :shared-library)
 		  force-compile
 		  defaults
@@ -4276,6 +4286,7 @@ In these cases the name of the output file is of the form
 					 '(:system :defsystem :subsystem)))
                             name
                             (find-system name :load))))
+;; ;madhu 190517 FIXME!
 	    #-(or CMU CLISP :sbcl :lispworks :cormanlisp scl MKCL)
 	    (declare (special *compile-verbose* #-MCL *compile-file-verbose*)
 		     #-openmcl (ignore *compile-verbose*
@@ -4912,7 +4923,9 @@ In these cases the name of the output file is of the form
       (progn (ext:package-lock "CL" nil)
 	     (setf (symbol-function 'cl:require)
 		   (symbol-function 'new-require))
-	     (ext:package-lock "CL" t))))))
+	     (ext:package-lock "CL" t))
+ ;;;madhu 190518 FIXME MKCL package-locks
+      ))))
 
 
 ;;; Well, let's add some more REQUIRE hacking; specifically for SBCL,
@@ -5583,7 +5596,7 @@ output to *trace-output*.  Returns the shell's exit code."
 	   nil)
 	  (t nil))))
 
-#+ecl
+#+(or ecl mkcl)
 (defun compile-file-operation--ecl (component force)
   "Call compile-file-operation with :system-p t to produce a .o file"
   (let* ((source-pname (component-full-pathname component :source))
@@ -5622,7 +5635,9 @@ output to *trace-output*.  Returns the shell's exit code."
 			  #+cmu
 			  *cmu-errors-to-terminal*
 
-			  :system-p t
+			  ;madhu 190517 - mkcl has no system-p
+			  #+ecl :system-p #+ecl t
+			  #+mkcl :fasl-p #+mkcl nil
 
 			  (component-compiler-options component)
 			  ))
@@ -5636,7 +5651,7 @@ output to *trace-output*.  Returns the shell's exit code."
 (defun compile-file-operation (component force)
   (compile-file-operation--internal component force)
   ;; ;madhu 170729 ecl: additionally compile a ".o"
-  #+ecl
+  #+(or ecl mkcl)
   (if *ecl-compile-file-system-p*
       (compile-file-operation--ecl component force)))
 
@@ -5760,7 +5775,8 @@ or does not contain valid compiled code."
 		   (progn
 		     (funcall (load-function component) binary-pname)
 		     (setf (component-load-time component)
-			   (file-write-date binary-pname)))))
+			   (ignore-errors;madhu 190627 MKCL static-file signals
+			     (file-write-date binary-pname))))))
 	     t)
 	    ((and source-exists
 		  (or (and load-source	; implicit needs-comp...
@@ -6174,20 +6190,49 @@ nil)
   (when (setq base (typecase base
 		     (mk::component base)
 		     (t (mk:find-system base))))
-    (if (atom path) (setq path (list path)))
-    (let ((components (mk::component-components base)))
-      (when components
-	(loop (cond ((or (endp path) (endp components))
-		     (return nil))
-		    ((equal (mk::canonicalize-component-name (car components))
-			    (if (stringp (car path))
-				(car path)
-				(string-downcase (string (car path)))))
-		     (cond ((cdr path)
-			    (setq components (mk::component-components
-					      (car components)))
-			    (setq path (cdr path)))
-			   (t (return (car components)))))
-		(t (setq components (cdr components)))))))))
+    (if (null path)
+	base
+	(let* ((path (if (atom path) (list path) path))
+	       (components (mk::component-components base)))
+	  (loop
+	     (cond ((or (endp path) (endp components))
+		    (return nil))
+		   ((equal (mk::canonicalize-component-name (car components))
+			   (if (stringp (car path))
+			       (car path)
+			       (string-downcase (string (car path)))))
+		    (cond ((cdr path)
+			   (setq components (mk::component-components
+					     (car components)))
+			   (setq path (cdr path)))
+			  (t (return (car components)))))
+		   (t (setq components (cdr components)))))))))
+
+#||
+(defun mk::find-component-loose (base path)
+  (when (setq base (typecase base
+		     (mk::component base)
+		     (t (mk:find-system base))))
+    (if (null path)
+	base
+	(prog ((path (if (atom path) (list path) path)))
+	  (%mk-traverse base (lambda (component)
+			       (
+
+	       (components (mk::component-components base)))
+	  (loop
+	     (cond ((or (endp path) (endp components))
+		    (return nil))
+		   ((equal (mk::canonicalize-component-name (car components))
+			   (if (stringp (car path))
+			       (car path)
+			       (string-downcase (string (car path)))))
+		    (cond ((cdr path)
+			   (setq components (mk::component-components
+					     (car components)))
+			   (setq path (cdr path)))
+			  (t (return (car components)))))
+		   (t (setq components (cdr components)))))))))
+||#
 
 ;;; end of file -- defsystem.lisp --
