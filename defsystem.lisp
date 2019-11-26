@@ -573,6 +573,15 @@
 ;;;                 file-write-date gives an error on a dummy load op
 ;;;                 on a non-existent file
 ;;;
+;;; 2019-09-01 dsm  fix traverse-pathname
+;;;
+;;; 2019-11-17 dsm  handle component-extensions - use
+;;;                 component-extension-i local t on the parent when
+;;;                 setting the extensions
+;;;
+;;; 2019-11-27 dsm  clean-system add a :propagate keyword argument
+;;;                 which rebinds *operations-propagate-to-subsystems*
+;;;                 and defaults to nil.
 
 ;;;---------------------------------------------------------------------------
 ;;; ISI Comments
@@ -3312,7 +3321,7 @@ used with caution.")
             (when (component-language component)
               (default-source-extension component))
 	    (when parent		; parent's default
-	      (component-extension parent :source))))
+	      (component-extension-i parent :source :local t))))
   (setf (component-extension component :binary)
 	(or (component-extension-i component :binary
                                  :local #| (component-language component) |#
@@ -3321,7 +3330,7 @@ used with caution.")
             (when (component-language component)
               (default-binary-extension component))
 	    (when parent		; parent's default
-	      (component-extension parent :binary))))
+	      (component-extension-i parent :binary :local t))))
 
   ;; Set up pathname defaults -- expand with parent
   ;; We must set up the source pathname before the binary pathname
@@ -4353,7 +4362,8 @@ In these cases the name of the output file is of the form
 (defun clean-system (name &key (force :all)
 			 (version *version*)
 			 (test *oos-test*) (verbose *oos-verbose*)
-			 dribble)
+			 dribble
+		     ((:propagate *operations-propagate-to-subsystems*) nil))
   "Deletes all the binaries in the system."
   ;; For users who are confused by OOS.
   (operate-on-system
