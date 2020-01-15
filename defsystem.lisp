@@ -1565,7 +1565,7 @@ fasl.")
 ;;; ********************************
 
 ;;; mc 11-Apr-91: Bashes MCL's point reader, so commented out.
-#-(or :allegro :mcl :ecl :mkcl)
+#-(or :allegro :mcl :ecl :mkcl :clisp)
 (eval-when (:compile-toplevel :load-toplevel :execute)
   ;; Define #@"foo" as a shorthand for (afs-binary-directory "foo").
   ;; For example,
