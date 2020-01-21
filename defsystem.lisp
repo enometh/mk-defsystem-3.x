@@ -582,6 +582,9 @@
 ;;; 2019-11-27 dsm  clean-system add a :propagate keyword argument
 ;;;                 which rebinds *operations-propagate-to-subsystems*
 ;;;                 and defaults to nil.
+;;;
+;;; 2020-01-18 dsm  system-relative-pathname hack
+;;;
 
 ;;;---------------------------------------------------------------------------
 ;;; ISI Comments
@@ -6232,5 +6235,12 @@ nil)
 			  (t (return (car components)))))
 		   (t (setq components (cdr components)))))))))
 ||#
+
+(defun system-relative-pathname (system path)
+  (let ((system (typecase system
+		  (component system)
+		  (t (find-system system)))))
+    (merge-pathnames path
+		     (component-root-dir system :source))))
 
 ;;; end of file -- defsystem.lisp --
