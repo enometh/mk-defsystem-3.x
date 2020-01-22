@@ -585,6 +585,9 @@
 ;;;
 ;;; 2020-01-18 dsm  system-relative-pathname hack
 ;;;
+;;; 2020-01-22 dsm  export *file-local-variables* bind it around
+;;;                 operations on :file and :private-file.
+;;;
 
 ;;;---------------------------------------------------------------------------
 ;;; ISI Comments
@@ -4453,6 +4456,9 @@ In these cases the name of the output file is of the form
 	))))
 
 
+(defvar *file-local-variables* nil)
+(export '*file-local-variables*)
+
 (defun operate-on-component (component operation force &aux changed)
   ;; Returns T if something changed and had to be compiled.
   (let ((type (component-type component))
@@ -4548,7 +4554,9 @@ In these cases the name of the output file is of the form
 	  (setq changed
 		(case type
 		  ((:file :private-file)
-		   (funcall (component-operation operation) component force))
+		   (progv *file-local-variables*
+		       (mapcar #'symbol-value *file-local-variables*)
+		     (funcall (component-operation operation) component force)))
 		  ((:module :system :subsystem :defsystem)
 		   (operate-on-components component operation force changed))))
 
