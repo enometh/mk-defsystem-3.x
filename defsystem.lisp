@@ -588,6 +588,8 @@
 ;;; 2020-01-22 dsm  export *file-local-variables* bind it around
 ;;;                 operations on :file and :private-file.
 ;;;
+;;; 2020-01-27 dsm  package-inferred-hack nonsense
+;;;
 
 ;;;---------------------------------------------------------------------------
 ;;; ISI Comments
@@ -6263,5 +6265,149 @@ nil)
 		  (t (find-system system)))))
     (merge-pathnames path
 		     (component-root-dir system :source))))
+
+
+
+;;; ----------------------------------------------------------------------
+;;;
+;;; PACKAGE-INFERRED-HACK
+;;; Tue Aug 13 17:08:12 2019 +0530
+;;;
+
+;; The names of the recognized defpackage forms.
+(defparameter *defpackage-forms* '(defpackage define-package))
+
+(defun package-names (package)
+  (cons (package-name package) (package-nicknames package)))
+
+(defun initial-package-inferred-systems-table ()
+  ;; Mark all existing packages are preloaded.
+  (let ((h (make-hash-table :test 'equal)))
+    (dolist (p (list-all-packages))
+      (dolist (n (package-names p))
+        (setf (gethash n h) t)))
+    h))
+
+;; Mapping from package names to systems that provide them.
+(defvar *package-inferred-systems* (initial-package-inferred-systems-table))
+
+;; Is a given form recognizable as a defpackage form?
+(defun defpackage-form-p (form)
+  (and (consp form)
+       (member (car form) *defpackage-forms*)))
+
+;; Find the first defpackage form in a stream, if any
+(defun stream-defpackage-form (stream)
+  (loop :for form = (read stream nil nil) :while form
+        :when (defpackage-form-p form) :return form))
+
+(defun file-defpackage-form (file)
+  "Return the first DEFPACKAGE form in FILE."
+  (with-open-file (f file)
+    (stream-defpackage-form f)))
+
+(define-condition package-inferred-system-missing-package-error ()
+  ((system :initarg :system :reader error-system)
+   (pathname :initarg :pathname :reader error-pathname))
+  (:report (lambda (c s)
+             (format s "~@<No package form found while ~
+                                     trying to define package-inferred-system ~A from file ~A~>"
+                     (error-system c) (error-pathname c)))))
+
+(defun package-dependencies (defpackage-form)
+  "Return a list of packages depended on by the package
+defined in DEFPACKAGE-FORM.  A package is depended upon if
+the DEFPACKAGE-FORM uses it or imports a symbol from it."
+  (assert (defpackage-form-p defpackage-form))
+  (remove-duplicates
+   (let (ret)
+     (flet ((dep (x) (push x ret)))
+       (loop :for (option . arguments) :in (cddr defpackage-form) :do
+	     (ecase option
+	       ((:use :mix :reexport :use-reexport :mix-reexport)
+		(dolist (p arguments) (dep (string p))))
+	       ((:import-from :shadowing-import-from)
+		(dep (string (first arguments))))
+	       ((:nicknames :documentation :shadow :export :intern :unintern :recycle)))))
+     (nreverse ret))
+   :from-end t :test 'equal))
+
+(defun package-designator-name (package)
+  "Normalize a package designator to a string"
+  (etypecase package
+    (package (package-name package))
+    (string package)
+    (symbol (string package))))
+
+(defun register-system-packages (system packages)
+  "Register SYSTEM as providing PACKAGES."
+  (let ((name (or (eq system t) (component-name (find-system system)))))
+    (dolist (p (if (and packages (atom packages)) (list packages) packages))
+      (setf (gethash (package-designator-name p) *package-inferred-systems*) name))))
+
+(defun package-name-system (package-name)
+  "Return the name of the SYSTEM providing PACKAGE-NAME, if such exists,
+otherwise return a default system name computed from PACKAGE-NAME."
+  (check-type package-name string)
+  (or (gethash package-name *package-inferred-systems*)
+      (string-downcase package-name)))
+
+;; Given a file in package-inferred-system style, find its dependencies
+(defun package-inferred-system-file-dependencies (file &optional system)
+  (let ((defpackage-form (file-defpackage-form file)))
+  (if defpackage-form
+    (remove t (mapcar 'package-name-system (package-dependencies defpackage-form)))
+    (error 'package-inferred-system-missing-package-error :system system :pathname file))))
+
+(defun package-inferred-prefixp (prefix pkg-spec &aux idx)
+  "Return the suffix"
+  (when (or (null (setq idx (mismatch prefix pkg-spec :test #'equalp)))
+	    (>= idx (length prefix)))
+    (subseq pkg-spec (length prefix))))
+
+(defun package-inferred-hack-get-pathname-on-disk (pkg-spec prefix dir)
+  ;;(assert (cl-user::prefixp  prefix pkg-spec) nil "~A" (list pkg-spec prefix dir))
+  (let ((x (package-inferred-prefixp prefix pkg-spec)))
+    (when x
+      (let ((p (concatenate 'string dir x ".lisp")))
+	p))))
+
+(defun package-inferred-hack-generate-file-list
+    (path prefix &optional dir (depth 0))
+  (unless dir
+    (assert (zerop depth))
+    (setq dir (directory-namestring path)))
+  (let ((ret (loop for dep in  (package-inferred-system-file-dependencies path)
+		   for p = (package-inferred-hack-get-pathname-on-disk
+			    dep prefix dir)
+		   unless p do (warn "~A: ignoring dep ~A" path dep)
+		   if p
+		   append
+		   (package-inferred-hack-generate-file-list p prefix dir (1+ depth))
+		   append `((:file ,dep
+			     ,@(when p
+				 (let* ((x (package-inferred-system-file-dependencies p))
+					(y (remove nil
+						   (mapcar (lambda (a)
+							     (package-inferred-prefixp prefix a))
+							   x))))
+				   (when y `(:depends-on ,y)))))))))
+    (setq ret (delete-duplicates ret :test #'equal :key #'second))
+    (if (zerop depth)
+	(remove nil
+		(mapcar (lambda (x &aux a)
+			  ;;(assert (cl-user::prefixp prefix x))
+			  (cond ((setq a (package-inferred-prefixp prefix (second x)))
+				 (setf (second x) a) x)
+				(t nil)))
+			ret))
+	ret)))
+
+
+#+nil
+(package-inferred-system-file-dependencies "~/cl/extern/rove/main.lisp")
+
+#+nil
+(package-inferred-hack-generate-file-list "/home/madhu/cl/extern/rove/main.lisp" "rove/")
 
 ;;; end of file -- defsystem.lisp --
