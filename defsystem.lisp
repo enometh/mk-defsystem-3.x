@@ -590,6 +590,8 @@
 ;;;
 ;;; 2020-01-27 dsm  package-inferred-hack nonsense
 ;;;
+;;; 2020-02-29 dsm  fix component-full-pathname-i for Closure CL
+;;;
 
 ;;;---------------------------------------------------------------------------
 ;;; ISI Comments
@@ -1981,11 +1983,12 @@ s/^[^M]*IRIX Execution Environment 1, *[a-zA-Z]* *\\([^ ]*\\)/\\1/p\\
 			(pop rel-directory)))
 	 ;; rtoy: Why should any Lisp want rel-file?  Shouldn't using
 	 ;; rel-name and rel-type work for every Lisp?
-         #-(or :MCL :sbcl :clisp :cmu) (rel-file (file-namestring rel-dir))
+	 ;; ;madhu 200229 add clozure
+         #-(or :MCL :sbcl :clisp :cmu :clozure-common-lisp) (rel-file (file-namestring rel-dir))
 	 ;; Stig (July 2001);
 	 ;; These values seems to help clisp as well
-	 #+(or :MCL :sbcl :clisp :cmu) (rel-name (pathname-name rel-dir))
-	 #+(or :MCL :sbcl :clisp :cmu) (rel-type (pathname-type rel-dir))
+	 #+(or :MCL :sbcl :clisp :cmu :clozure-common-lisp) (rel-name (pathname-name rel-dir))
+	 #+(or :MCL :sbcl :clisp :cmu :clozure-common-lisp) (rel-type (pathname-type rel-dir))
 	 (directory nil))
 
     ;; TI Common Lisp pathnames can return garbage for file names because
@@ -2038,11 +2041,11 @@ s/^[^M]*IRIX Execution Environment 1, *[a-zA-Z]* *\\([^ ]*\\)/\\1/p\\
                     :directory
                     directory
 		    :name
-		    #-(or :sbcl :MCL :clisp :cmu) rel-file
-		    #+(or :sbcl :MCL :clisp :cmu) rel-name
+		    #-(or :sbcl :MCL :clisp :cmu :clozure-common-lisp) rel-file
+		    #+(or :sbcl :MCL :clisp :cmu :clozure-common-lisp) rel-name
 
-		    #+(or :sbcl :MCL :clisp :cmu) :type
-		    #+(or :sbcl :MCL :clisp :cmu) rel-type
+		    #+(or :sbcl :MCL :clisp :cmu :clozure-common-lisp) :type
+		    #+(or :sbcl :MCL :clisp :cmu :clozure-common-lisp) rel-type
 		    ))))
 
 
@@ -2947,6 +2950,35 @@ used with caution.")
        (component-full-pathname-i component type version)))))
 
 
+;;madhu 200229  long standing userspace kludge.
+;; clozure escapes the final dot in pathname-name or pathname-type
+;; (namestring (make-pathname :name "foo.lisp" :type "bar.lisp"))
+;;  "foo.lisp.bar\\.lisp"
+;;  (namestring (make-pathname :name "foo.lisp" :type nil))
+;; "foo\\.lisp"
+;;  (namestring (make-pathname :name "foo.lisp" :type "bar\\."))
+;; (pathname  "foo.lisp.bar\\.")
+;; (fix-clozure-namestring (namestring (make-pathname :name "/a.b/c" :type "d.d/foo.bar.lisp")
+;; (fix-clozure-namestring (namestring (probe-file "/dev/shm/\\\\.")))
+;;(elt  (directory "/dev/shm/*" :follow-links nil) 5)
+#+nil
+(fix-clozure-namestring  "foo.lisp.bar\\.\\.lisp\\.var")
+
+(defun fix-clozure-namestring (string)
+  #+clozure
+  (let ((p (search "\\." string :from-end t)))
+    (if p
+	(let ((end (length string)) ret)
+	  (loop
+	    (push (subseq string (1+ p) end) ret)
+	    (setq end p)
+	    (unless (setq p (search "\\." string :from-end t :end2 p))
+	      (push (subseq string 0 end) ret)
+	      (return (apply #'concatenate 'string ret)))))
+	string))
+  #-clozure
+  string)
+
 (defun component-full-pathname-i (component type
                                             &optional (version *version*)
 					    &aux version-dir version-replace)
@@ -3013,6 +3045,7 @@ used with caution.")
 							      type))))
 	   (namestring (translate-logical-pathname pathname)))
 	  (t
+	   (fix-clozure-namestring
 	   (namestring
 	    (make-pathname :host (or (component-host component)
 				     (pathname-host pathname))
@@ -3078,7 +3111,7 @@ used with caution.")
 						#+scl :common
 						))
 			   ;; :version :newest
-			   ))))))
+			   )))))))
 
 
 #-lispworks
