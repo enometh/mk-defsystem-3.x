@@ -592,6 +592,8 @@
 ;;;
 ;;; 2020-02-29 dsm  fix component-full-pathname-i for Closure CL
 ;;;
+;;; 2020-03-07 dsm  :description :license :if-feature support
+;;;
 
 ;;;---------------------------------------------------------------------------
 ;;; ISI Comments
@@ -2531,11 +2533,14 @@ D
   (licence nil :type (or null string))
   (maintainer nil :type (or null string))
   (version nil :type (or null string))
+  (description nil :type (or null string))
+  (license nil :type (or null string))
 
   ;; Added NON-REQUIRED-P slot.  Useful for optional items.
   (non-required-p nil :type boolean)	; If T a missing file or
 					; sub-directory will not cause
 					; an error.
+  (if-feature nil :type (or null keyword cons))
   )
 
 
@@ -3471,6 +3476,19 @@ used with caution.")
 		      (component-pathname component :source)))))))
     ))
 
+(defun featurep (x &optional (*features* *features*))
+  "Checks whether a feature expression X is true with respect to the *FEATURES* set,
+as per the CLHS standard for #+ and #-. Beware that just like the
+CLHS, we assume symbols from the KEYWORD package are used, but that
+unless you're using #+/#- your reader will not have magically used the
+KEYWORD package, so you need specify keywords explicitly."
+    (cond
+      ((atom x) (and (member x *features*) t))
+      ((eq :not (car x)) (assert (null (cddr x))) (not (featurep (cadr x))))
+      ((eq :or (car x)) (some #'featurep (cdr x)))
+      ((eq :and (car x)) (every #'featurep (cdr x)))
+      (t (error "~S: malformed feature specification ~S" 'featurep x))))
+
 #|| ;; old version
 (defun expand-component-components (component &optional (indent 0))
   (let ((definitions (component-components component)))
@@ -3485,7 +3503,13 @@ used with caution.")
 
 ;;; new version
 (defun expand-component-components (component &optional (indent 0))
-  (let ((definitions (component-components component)))
+  (let ((definitions
+	  (remove-if-not (lambda (c)
+			   (let ((feat (and (consp c) (getf c :if-feature)))) ;component-if-feature
+			     (if feat
+				 (featurep feat)
+				 t)))
+			 (component-components component))))
     (if (eq (car definitions) :serial)
 	(setf (component-components component)
 	      (expand-serial-component-chain (cdr definitions)
