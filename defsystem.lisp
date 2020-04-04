@@ -594,6 +594,19 @@
 ;;;
 ;;; 2020-03-07 dsm  :description :license :if-feature support
 ;;;
+;;; 2020-04-04 dsm  Deprecate, i.e. do not export
+;;;                 system-definition-pathname (which computes a
+;;;                 "modulename.system" pathname relative to the
+;;;                 system source directory.  Record the truename of
+;;;                 the system definition file when the system is
+;;;                 loaded in
+;;;                 *defsystem-to-defsystem-file-map*. Rewrite
+;;;                 compute-system-path to fallback to this value when
+;;;                 the system cannot be found in *central-registry*
+;;;                 by the old means. make the second arg to
+;;;                 compute-system-path optional (so it can be used
+;;;                 instead of deprecated system-definition-pathname
+;;;
 
 ;;;---------------------------------------------------------------------------
 ;;; ISI Comments
@@ -1177,7 +1190,8 @@
                   find-system
                   defsystem compile-system load-system hardcopy-system
 
-                  system-definition-pathname
+;; DUBIOUS ;madhu 200404
+;;                  system-definition-pathname
 
                   missing-component
                   missing-component-name
@@ -2673,7 +2687,13 @@ D
 
 ;;; compute-system-path --
 
-(defun compute-system-path (module-name definition-pname)
+;; ;madhu 200404 - rewrite compute-system-path to use
+;; *defsystem-to-defsystem-file-map* to store the path where the
+;; defsystem was loaded from
+
+(defvar *defsystem-to-defsystem-file-map* (make-hash-table :test #'equal))
+
+(defun compute-system-path-1 (module-name definition-pname)
   ;;madhu 170723 - handle retarded module-names "cffi/c2fi" ccl: blows
   ;;up on probe-file. clisp blows up on make-pathname :name
   (let* ((module-string-name-0
@@ -2723,6 +2743,22 @@ D
 	       (or (probe-file file-pathname)
                    (probe-file lib-file-pathname)))))
     ))
+
+
+(defun compute-system-path (module-name &optional definition-pname)
+  (if (typep module-name 'component)
+      (setq module-name (component-name module-name)))
+  (let ((ret1 (compute-system-path-1 module-name definition-pname))
+	(ret2 (gethash (canonicalize-system-name module-name)
+		       *defsystem-to-defsystem-file-map*)))
+    (cond (ret1
+	   (cond (ret2
+		   (cond ((equalp ret1 (probe-file ret2)) ret1)
+			 (t (warn "MK:COMPUTE-SYSTEM-PATH: system was last loaded from ~A (not ~A): using previously loaded path" ret2 ret1)
+			    ret2)))
+		 (t ret1)))
+	  (t (cond (ret2 ret2)
+		   (t nil))))))
 
 
 (defun system-definition-pathname (system-name)
@@ -3313,6 +3349,13 @@ used with caution.")
                                   :defaults *load-pathname*
 		    ))
 		 definition-body)))
+  (let* ((can-name (canonicalize-system-name name))
+	 (orig (gethash can-name *defsystem-to-defsystem-file-map*))
+	 (val (or *load-truename* *compile-file-truename*)))
+    (when (and orig (not (equalp val orig)))
+      (warn "Defsystem ~A is being defined in ~A (previously ~A)" can-name
+	    val orig))
+    (setf (gethash can-name *defsystem-to-defsystem-file-map*) val))
   `(create-component :defsystem ',name
                      ,(preprocess-component-definition definition-body)
                      nil
