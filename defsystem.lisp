@@ -607,6 +607,16 @@
 ;;;                 compute-system-path optional (so it can be used
 ;;;                 instead of deprecated system-definition-pathname
 ;;;
+;;; 2020-05-31 dsm  Try to fix ecl situations where the user calls
+;;;                 (ext:install-c-compiler) and
+;;;                 (ext:install-bytecodes-compiler) at runtime to
+;;;                 change the compiler: make *filename-extensions* a
+;;;                 defparameter so the user can reload defsystem.lisp
+;;;                 to pick up the change between .fas and .fasc. Use
+;;;                 the symbol compile-file instead of #'compile-file
+;;;                 in (define-language :lisp) because ecl switches
+;;;                 the fdefinitions for compile-file.
+;;;
 
 ;;;---------------------------------------------------------------------------
 ;;; ISI Comments
@@ -1481,7 +1491,7 @@ and up to date.")
 
 
 ;;; *filename-extensions* is a cons of the source and binary extensions.
-(defvar *filename-extensions*
+(defparameter *filename-extensions*
   (car `(#+(and Symbolics Lispm)              ("lisp" . "bin")
          #+(and dec common vax (not ultrix))  ("LSP"  . "FAS")
          #+(and dec common vax ultrix)        ("lsp"  . "fas")
@@ -5242,8 +5252,7 @@ In these cases the name of the output file is of the form
 
 ;;; *** Lisp Language Definition
 (define-language :lisp
-  :compiler #'compile-file
-  :loader #'load
+  :compiler #-ecl #'compile-file #+ecl 'compile-file
   :source-extension (car *filename-extensions*)
   :binary-extension (cdr *filename-extensions*))
 
