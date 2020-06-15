@@ -617,6 +617,8 @@
 ;;;                 in (define-language :lisp) because ecl switches
 ;;;                 the fdefinitions for compile-file.
 ;;;
+;;; 2020-06-15 dsm  Fix lispworks call-system-showing-output
+;;;
 
 ;;;---------------------------------------------------------------------------
 ;;; ISI Comments
@@ -5283,7 +5285,7 @@ In these cases the name of the output file is of the form
   #+(or :cmu :scl) (extensions:run-program program arguments)
   #+:openmcl (ccl:run-program program arguments)
   #+:sbcl (sb-ext:run-program program arguments)
-  #+:lispworks (foreign:call-system-showing-output
+  #+:lispworks (system:call-system-showing-output
 		(format nil "~A~@[ ~{~A~^ ~}~]" program arguments))
   #+clisp (#+lisp=cl ext:run-program #-lisp=cl lisp:run-program
                      program :arguments arguments)
