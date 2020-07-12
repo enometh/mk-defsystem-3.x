@@ -31,6 +31,7 @@
 ;;;               1999 - 2005 Mark Kantrowitz and Marco Antoniotti. All
 ;;;                           rights reserved.
 ;;;               2005 - 2012 Marco Antoniotti. All rights reserved.
+;;;               2008 - 2020 Madhu <enometh@meer.net> All rights ~reseda~
 
 ;;; Use, copying, modification, merging, publishing, distribution
 ;;; and/or sale of this software, source and/or binary files and
@@ -1269,7 +1270,7 @@
 ;;; ********************************
 ;;; Defsystem Version **************
 ;;; ********************************
-(defparameter *defsystem-version* "3.8 Interim, 20120719"
+(defparameter *defsystem-version* "3.8 Interim, 20200712 (locally patched)"
   "Current version number/date for MK:DEFSYSTEM.")
 
 
