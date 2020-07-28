@@ -623,6 +623,12 @@
 ;;; 2020-08-02 dsm  publish mk-oos find-system-pathname (TODO)
 ;;;                 missing-deps
 ;;;
+;;; 2020-08-08 dsm  WIP. publish package-inferred-hack-dump-defsystem-file
+;;;                 and asd-hack-dump-defsystem-file which assumes a
+;;;                 convention of one definition per asd file and one
+;;;                 asd file per directory. TODO split this commit
+;;;                 into defsystem-extras.lisp
+;;;
 
 ;;;---------------------------------------------------------------------------
 ;;; ISI Comments
@@ -6490,17 +6496,21 @@ otherwise return a default system name computed from PACKAGE-NAME."
 	p))))
 
 (defun package-inferred-hack-generate-file-list
-    (path prefix &optional dir (depth 0))
+    (path prefix &optional dir (depth 0) &aux ignored-deps)
   (unless dir
     (assert (zerop depth))
     (setq dir (directory-namestring path)))
   (let ((ret (loop for dep in  (package-inferred-system-file-dependencies path)
 		   for p = (package-inferred-hack-get-pathname-on-disk
 			    dep prefix dir)
-		   unless p do (warn "~A: ignoring dep ~A" path dep)
+		   unless p do (progn (pushnew dep ignored-deps :test #'equalp))
 		   if p
 		   append
-		   (package-inferred-hack-generate-file-list p prefix dir (1+ depth))
+		   (multiple-value-bind (ret1 ignored-deps1)
+		       (package-inferred-hack-generate-file-list p prefix dir (1+ depth))
+		     (setq ignored-deps (union ignored-deps ignored-deps1 :test #'equalp))
+		     ret1)
+
 		   append `((:file ,dep
 			     ,@(when p
 				 (let* ((x (package-inferred-system-file-dependencies p))
@@ -6510,22 +6520,351 @@ otherwise return a default system name computed from PACKAGE-NAME."
 							   x))))
 				   (when y `(:depends-on ,y)))))))))
     (setq ret (delete-duplicates ret :test #'equal :key #'second))
-    (if (zerop depth)
-	(remove nil
-		(mapcar (lambda (x &aux a)
-			  ;;(assert (cl-user::prefixp prefix x))
-			  (cond ((setq a (package-inferred-prefixp prefix (second x)))
-				 (setf (second x) a) x)
-				(t nil)))
-			ret))
-	ret)))
-
+    (values
+     (if (zerop depth)
+	 (remove nil
+		 (mapcar (lambda (x &aux a)
+			   ;;(assert (cl-user::prefixp prefix x))
+			   (cond ((setq a (package-inferred-prefixp prefix (second x)))
+				  (setf (second x) a) x)
+				 (t nil)))
+			 ret))
+	 ret)
+     ignored-deps)))
 
 #+nil
 (package-inferred-system-file-dependencies "~/cl/extern/rove/main.lisp")
 
 #+nil
 (package-inferred-hack-generate-file-list "/home/madhu/cl/extern/rove/main.lisp" "rove/")
+
+;;; ----------------------------------------------------------------------
+;;;
+;;; CLEAN COMPONENTS-LIST form (generated from ASD)
+;;;
+
+(defun frob-plist-path (plist)
+  "Replace :PATHNAME with :SOURCE-PATHNAME"
+  (let ((path (getf plist :pathname '%notthere%)))
+    (unless (eq path '%notthere%)
+      (let ((cons (member :pathname plist)))
+	(assert (eq path (second cons)))
+	(rplaca cons :source-pathname)))
+    plist))
+
+#+nil
+(frob-plist-path '(:file :barf :pathname "tmp/" :depends-on ("x" "y" "z")))
+
+(defun frob-plist-serial (plist)
+  "Remove :SERIAL T from PLIST"
+  (let ((serial (getf plist :serial '%notthere%)))
+    (unless (eq serial '%notthere%)
+      (remf plist :serial)
+      (let ((components-list (getf plist :components '%notthere%)))
+	(unless (eq components-list '%notthere%)
+	  (let ((cons (member :components plist)))
+	    (assert (eq components-list (second cons)))
+	    (setf (second cons) (cons :serial components-list)))))))
+
+  plist)
+
+#+nil
+(frob-plist-serial '(:module :barf :serial t :pathname "tmp/" :components ("x" "y" "z")))
+
+(defun frob-plist-grovel (plist)
+  `(:file ,@(cdr plist) :language :cffi-grovel))
+
+#+nil
+(progn
+(frob-plist-grovel '(:cffi-grovel-file "grovel-example" :depends-on ("package")))
+(frob-plist-grovel '(cffi-grovel:grovel-file "grovel")))
+
+(defun frob-plist-wrapper (plist)
+  `(:file ,@(cdr plist) :language :cffi-wrapper))
+
+;; may need to reload this after cffi-grovel is loaded
+(defun clean-components-list (list)
+  (let (ret)
+    (dolist (val list)
+      (cond ((atom val) (push val ret))
+	    (t (let ((x (car val)) pkg)
+		 (cond ((or (eql x :cffi-grovel-file)
+			    (and (setq pkg (cl:find-package "CFFI-GROVEL"))
+				 (eql x (find-symbol "GROVEL-FILE" pkg))))
+			(push (frob-plist-grovel val) ret))
+		       ((or (eql x :cffi-wrapper-file)
+			    (and (setq pkg (cl:find-package "CFFI-GROVEL"))
+				 (eql x (find-symbol "WRAPPER-FILE" pkg))))
+			(push (frob-plist-wrapper val) ret))
+		       ((eql x :module)
+			(setq val (frob-plist-path val))
+			(push (frob-plist-serial val) ret))
+		       ((eql x :file)
+			(push (frob-plist-path val) ret))
+		       ((member x '(:doc-file :static-file)) nil))))))
+    (nreverse ret)))
+
+#+nil
+(clean-components-list '((:module foo :serial t :pathname "barf" :depends-on (a b c))
+			 (:static-file "barf")
+			 (:cffi-grovel-file "xyz")))
+
+;;; ----------------------------------------------------------------------
+;;;
+;;; PRETTY PRINT DEFSYSTEMS
+;;;
+
+(defvar +tab-stop+ 8)
+(defvar +indent-tabs-mode+ t)
+
+(defun write-indent (nindent-chars stream &key (tab-stop +tab-stop+)
+		     (indent-tabs-mode +indent-tabs-mode+))
+  (let ((i 0)
+	(ntabs (if indent-tabs-mode
+		   (floor nindent-chars tab-stop)
+		   0)))
+    (loop (cond ((> i nindent-chars) (error "sanity"))
+		((= i nindent-chars) (return))
+		((and (> ntabs 0) (>= (- nindent-chars i) tab-stop))
+		 (incf i tab-stop)
+		 (decf ntabs)
+		 (write-char #\Tab stream))
+		(t (write-char #\Space stream)
+		   (incf i))))))
+
+#+nil
+(progn (write-indent 9 *standard-output*)
+       (terpri *standard-output*))
+
+(defun format-mk-plist (plist stream &key (indent 0))
+  (loop for x on plist by #'cddr for (key val) = x do
+	(assert (keywordp key))
+	(format stream "~(~S~) " key)
+	(cond ((atom val)
+	       (if (eql key :module)
+		   (format stream "~(~S~)" val)
+		   (format stream "~S" val)))
+	      ((eql key :components)
+	       (format-mk-components-list (clean-components-list val)
+					  stream :indent (+ indent 11 1)))
+	      ((eql key :depends-on)
+	       (format-mk-depends-on-list val
+					  stream :indent (+ indent 11 1)))
+	      (t (format stream "~S" val)))
+	(when (cddr x)
+	  (terpri stream)
+	  (write-indent indent stream))))
+
+#+nil
+(format-mk-plist '(:a 1 :b 2 :components (x y z) :c 3 :depends-on (e "f" g)) *standard-output*)
+
+#+nil
+(format-mk-plist '(:file "a" :depends-on ("b" "c")) *standard-output*)
+
+(defun format-mk-name (name stream)
+  (check-type name (or keyword symbol string))
+  (cond ((and (symbolp name)
+	      (not (symbol-package name)))
+	 (format stream ":~(~A~)" name))
+	(t (format stream "~(~S~)" name))))
+
+(defun format-mk-depends-on-list (list stream &key (indent 0))
+  (format stream "(")
+  (loop for x on list for item = (car x)
+	do
+	(when (consp item)
+	  (assert (eql (car item) :version))
+	  (warn "ignoring version depends-on ~S" item)
+	  (setq item (second item)))
+	(format-mk-name item stream)
+	(when (cdr x)
+	  (terpri stream)
+	  (write-indent (+ indent 1) stream)))
+  (format stream ")"))
+
+#+nil
+(format-mk-depends-on-list '("y" "z") *standard-output* :indent 0)
+
+(defun format-mk-components-list (list stream &key (indent 0))
+  (format stream "(")
+  (loop for x on list for item = (car x)
+	do
+	(format-mk-item item stream :indent (+ indent 1))
+	(when (cdr x)
+	  (terpri stream)
+	  (write-indent (+ indent 1) stream)))
+  (format stream ")"))
+
+(defun format-mk-item (val stream &key (indent 0))
+  "VAL is a string or a list like (:file ... ) or (:module ...)"
+  (etypecase val
+    (atom (format stream "~S" val))
+    (cons (assert (keywordp (car val)))
+	  (format stream "(")
+	  (format-mk-plist val stream :indent (+ indent 1))
+	  (format stream ")"))))
+
+(defun format-mk-form (mk-form stream &key (indent 0) source-dir binary-dir
+		       (source-ext "lisp"))
+  (destructuring-bind (sym name &rest key-val-args) mk-form
+    (assert name)
+    (ecase sym
+      ((defsystem)
+       (format stream "(mk:defsystem ")
+       (format-mk-name name stream)
+       (terpri stream)
+       (and source-dir (format stream "  :source-pathname ~A~&" source-dir))
+       (and binary-dir (format stream "  :binary-pathname ~A~&" binary-dir))
+       (and source-ext (format stream "  :source-extension ~S" source-ext))
+       (when key-val-args
+	 (terpri stream)
+	 (write-indent (+ indent 2) stream)
+	 (format-mk-plist key-val-args stream :indent (+ indent 2)))
+       (format stream ")")))))
+
+;;;
+;;; dump defsystem files from asd definitions
+;;;
+(defvar *asd-forms* '(defsystem))
+
+;; Is a given form recognizable as a defsystem form?
+(defun asd-form-p (form)
+  (and (consp form)
+       (member (car form) *asd-forms* :key #'symbol-name :test #'string-equal)))
+
+;; Find the first defsystem form in a stream, if any
+(defun stream-asd-form (stream)
+  (loop :for form = (read stream nil nil) :while form
+        :when (asd-form-p form) :return form))
+
+(defun file-asd-form (file)
+  "Return the first DEFSYSTEM form in FILE."
+  (with-open-file (f file)
+    (stream-asd-form f)))
+
+(defun extract-subdirs (asd-definition-path prefix)
+  (let* ((enough-namestring (enough-namestring asd-definition-path prefix))
+	 (dir (pathname-directory enough-namestring)))
+    (when dir
+      (assert (eq (car dir) :relative))
+      (copy-seq (cdr dir)))))
+
+(defun make-mk-form-1 (components-form subdirs)
+  (if (endp subdirs)
+      components-form
+      `((:module ,(car subdirs)
+	 ,@(unless (string= (string-downcase (car subdirs))
+			    (car subdirs))
+	     `(:source-pathname ,(car subdirs)))
+	 :components ,(make-mk-form-1 components-form (cdr subdirs))))))
+
+(defun make-mk-form (asd-form subdirs asd-path)
+  (let* ((depends-on (getf asd-form :depends-on))
+	 (components (getf asd-form :components))
+	 (package-inferred-p
+	  (eq (getf asd-form :class) :package-inferred-system)))
+    ;; apparently some users just stick in a :class
+    ;; :package-inferred-system without really meaning it
+    (when (and package-inferred-p (not components))
+      (assert (= (length depends-on) 1))
+      (let* ((prefix (concatenate 'string (string (second asd-form)) "/"))
+	     (pkg-path
+	      (package-inferred-hack-get-pathname-on-disk
+	       (car depends-on) prefix
+	       (directory-namestring asd-path))))
+	(assert pkg-path nil "Could not infer the path to the package file")
+	(multiple-value-bind (ret1 ignored-deps1)
+	    (package-inferred-hack-generate-file-list pkg-path prefix)
+	  (setq depends-on ignored-deps1)
+	  (setq components ret1))))
+    `(defsystem ,(second asd-form)
+       ,@(if depends-on `(:depends-on ,depends-on))
+       ,@(if components `(:components
+			  ,(make-mk-form-1 components
+					   subdirs))))))
+
+(defun get-asd-file-list (dir)
+  (mk::split-string
+   (with-output-to-string (stream)
+     (let ((ret (mk::run-shell-command "IFS=$'\n'; find ~S -name '*.asd' -type f" (list dir)
+				   :output stream)))
+       (assert (zerop ret) nil "Error running program: ~A" (get-output-stream-string stream))))
+   :item #\Newline))
+
+#+nil
+(get-asd-file-list "/home/madhu/cl/extern/cffi/")
+
+(defun compare-system-names (a b)
+  (let ((as (string a)) (bs (string b)))
+    (let ((la (length as)) (lb (length bs)))
+      (or (> la lb)
+	  (and (= la lb)
+	       (string> as bs))))))
+
+;;;
+;;; generate defsystem files from asd definitions
+;;;
+
+(defun asd-hack-dump-defsystem-file (target-file name root-dir &optional
+				     (asd-file-list (get-asd-file-list root-dir)))
+  (let* ((source-dir (format nil "*~(~A~)-source-dir*" name))
+	 (binary-dir (format nil "*~(~A~)-binary-dir*" name))
+	 (forms (sort (loop for f in asd-file-list
+			    for asd-form = (file-asd-form f)
+			    for subdirs = (extract-subdirs f root-dir)
+			    for mk-form = (with-simple-restart (skip "Skip")
+					    (make-mk-form asd-form subdirs f))
+			    when mk-form collect it)
+		      #'compare-system-names
+		      :key #'second)))
+    (with-open-file (stream target-file :direction :output
+			    :if-exists :supersede)
+      (format stream "(in-package \"CL-USER\")~%
+\(defvar ~A ~S)
+\(defvar ~A (binary-directory ~A))~%~%"
+	      source-dir root-dir
+	      binary-dir source-dir)
+      (loop for form in forms do
+	    (format-mk-form form stream
+			    :source-dir source-dir
+			    :binary-dir binary-dir)
+	    (format stream "~%~%#+nil~%(mk:oos ")
+	    (format-mk-name (second form) stream)
+	    (format stream " :load :compile-during-load t)~%~%")))))
+
+
+;; a bogus ASDF package maybe needed to READ asd files before dumping them
+#+nil
+(defpackage "ASDF"
+  (:use)
+  (:export "FIND-SYSTEM" "LOAD-SYSTEM" "DEFSYSTEM" "CLEAR-SYSTEM"
+   "TEST-OP" "C-SOURCE-FILE" "PERFORM" "LOAD-OP" "LOAD-SOURCE-OP" "OUTPUT-FILES" "COMPILE-OP" "COMPONENT-PATHNAME"
+   "TEST-SYSTEM" "PROGRAM-OP"
+   "REGISTER-SYSTEM-PACKAGES"))
+
+;; if we dont trust your asd files we may need to wrap the dump forms in
+(defmacro without-the-sharpdot-reader (&body body)
+  `(let ((*readtable* (copy-readtable)) (*read-eval* nil))
+     (set-dispatch-macro-character #\# #\.
+				   (lambda (s c n)
+				     (format t "IGNORING ~S" (read s))))
+     ,@body))
+
+#+nil
+(asd-hack-dump-defsystem-file "/dev/shm/cl-cffi-gtk.system" "cl-cffi-gtk"
+			      "/home/madhu/cl/extern/cl-cffi-gtk/")
+
+#+nil
+(asd-hack-dump-defsystem-file "/dev/shm/dbus.system"
+			      "dbus"
+			      "/home/madhu/cl/extern/dbus"
+			      '("/home/madhu/cl/extern/dbus/dbus.system"))
+
+
+;;; ----------------------------------------------------------------------
+;;;
+;;;
+;;;
 
 (defun find-system-definition-pathname (spec)
   (if (typep spec 'component)
