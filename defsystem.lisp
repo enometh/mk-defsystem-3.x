@@ -6462,12 +6462,17 @@ otherwise return a default system name computed from PACKAGE-NAME."
     (remove t (mapcar 'package-name-system (package-dependencies defpackage-form)))
     (error 'package-inferred-system-missing-package-error :system system :pathname file))))
 
+(defun package-inferred-prefixp (prefix pkg-spec &aux idx)
+  "Return the suffix"
+  (when (or (null (setq idx (mismatch prefix pkg-spec :test #'equalp)))
+	    (>= idx (length prefix)))
+    (subseq pkg-spec (length prefix))))
+
 (defun package-inferred-hack-get-pathname-on-disk (pkg-spec prefix dir)
   ;;(assert (cl-user::prefixp  prefix pkg-spec) nil "~A" (list pkg-spec prefix dir))
-  (when (cl-user::prefixp  prefix pkg-spec)
-    (let* ((x (subseq pkg-spec (length prefix)))
-	   (p (concatenate 'string dir x ".lisp")))
-      (when (probe-file p)
+  (let ((x (package-inferred-prefixp prefix pkg-spec)))
+    (when x
+      (let ((p (concatenate 'string dir x ".lisp")))
 	p))))
 
 (defun package-inferred-hack-generate-file-list
@@ -6482,15 +6487,22 @@ otherwise return a default system name computed from PACKAGE-NAME."
 		   if p
 		   append
 		   (package-inferred-hack-generate-file-list p prefix dir (1+ depth))
-		   append (list dep))))
-    (setq ret (delete-duplicates ret :test #'equal))
+		   append `((:file ,dep
+			     ,@(when p
+				 (let* ((x (package-inferred-system-file-dependencies p))
+					(y (remove nil
+						   (mapcar (lambda (a)
+							     (package-inferred-prefixp prefix a))
+							   x))))
+				   (when y `(:depends-on ,y)))))))))
+    (setq ret (delete-duplicates ret :test #'equal :key #'second))
     (if (zerop depth)
 	(remove nil
-		(mapcar (lambda (x)
+		(mapcar (lambda (x &aux a)
 			  ;;(assert (cl-user::prefixp prefix x))
-			  (if (cl-user::prefixp prefix x)
-			      (subseq x (length prefix))
-			      NIL))
+			  (cond ((setq a (package-inferred-prefixp prefix (second x)))
+				 (setf (second x) a) x)
+				(t nil)))
 			ret))
 	ret)))
 
