@@ -620,6 +620,9 @@
 ;;;
 ;;; 2020-06-15 dsm  Fix lispworks call-system-showing-output
 ;;;
+;;; 2020-08-02 dsm  publish mk-oos find-system-pathname (TODO)
+;;;                 missing-deps
+;;;
 
 ;;;---------------------------------------------------------------------------
 ;;; ISI Comments
@@ -6524,4 +6527,70 @@ otherwise return a default system name computed from PACKAGE-NAME."
 #+nil
 (package-inferred-hack-generate-file-list "/home/madhu/cl/extern/rove/main.lisp" "rove/")
 
+(defun find-system-definition-pathname (spec)
+  (if (typep spec 'component)
+      (setq spec (component-name spec)))
+  (or (compute-system-path spec)
+      (system-definition-pathname spec)))
+
+(defun mk-oos (&rest args)
+  "MK-OOS SYSTEM-NAME &OPTIONAL OP &KEY (:PROPAGATE NIL) &ALLOW-OTHER_KEYS
+
+A convenience function around MK:OOS. The default invocation \(MK-OOS
+SYSTEM) compiles \(and loads) the files in the system SYSTEM-NAME -
+all files are recompiled but dependent systems are not touched.  This
+works by defaulting OOS keyword arguments :FORCE to T ,
+COMPILE-DURING-LOAD to T, and by binding
+*OPERATIONS-PROPAGATE-TO-SUBSYSTEMS* to NIL.
+
+OP can be :COMPILE or :LOAD.  :PROPAGATE T can be supplied to force
+recompilations of all dependent systems. Other keyword arguments to
+OOS if supplied are passed on to OOS"
+  (let* ((extra-args nil)
+	 (propagate-cons (member :propagate args))
+	 (propagate-supplied-p (if propagate-cons t))
+	 (*operations-propagate-to-subsystems*
+	  (if propagate-supplied-p
+	      (second propagate-cons)
+	      nil))
+	 (real-args nil))
+    (flet ((frob (k v)
+	     (let ((elt (member k (cddr args))))
+	       (if (not elt)
+		   (setq extra-args (append `(,k ,v) extra-args))))))
+      (frob :compile-during-load t)
+      (frob :force t))
+    (setq real-args (append (list (car args))
+			    (list (if (endp (cdr args))
+				 :compile
+				 (cadr args)))
+			    extra-args))
+    (when propagate-supplied-p (remf real-args :propagate))
+    (format t "MK-OOS ~{~A~^ ~}~&" real-args)
+    (apply #'oos real-args)))
+
+(defun missing-deps (system)
+  (let ((hash (make-hash-table :test #'equal)) ret)
+    (labels ((alldeps (system depth)
+	       (assert (component-p system))
+	       (assert (eq (component-type system) :defsystem))
+	       (incf (gethash system hash 0))
+	       (loop for system-dep-spec in (component-depends-on system)
+		     for system-dep = (find-system system-dep-spec :load-or-nil)
+		     do (if system-dep
+			    (alldeps system-dep (1+ depth))
+			    (incf (gethash system-dep-spec hash 0))))))
+      (alldeps (ensure-system system) 0)
+      (maphash (lambda (k v)
+		 (unless (component-p k)
+		   (push (cons k v) ret)))
+	       hash)
+      (values (mapcar 'car ret) (mapcar 'cdr ret)))))
+
+(export '(find-system-definition-pathname mk-oos missing-deps))
+
+
+
+#+nil
+(missing-deps :lem)
 ;;; end of file -- defsystem.lisp --
