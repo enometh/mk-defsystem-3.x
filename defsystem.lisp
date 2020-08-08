@@ -6347,10 +6347,8 @@ nil)
 	  (loop
 	     (cond ((or (endp path) (endp components))
 		    (return nil))
-		   ((equal (mk::canonicalize-component-name (car components))
-			   (if (stringp (car path))
-			       (car path)
-			       (string-downcase (string (car path)))))
+		   ((string-equal (component-name (car components))
+				  (car path))
 		    (cond ((cdr path)
 			   (setq components (mk::component-components
 					     (car components)))
