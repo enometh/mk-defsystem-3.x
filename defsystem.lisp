@@ -4940,7 +4940,12 @@ In these cases the name of the output file is of the form
 
           ;; If no system definition file, try regular require.
           ;; had last arg  PATHNAME, but this wasn't really necessary.
-	  ((let ((val (funcall *old-require* module-name))) ;madhu 080827 debug lw hqn-web
+	  ((let ((val #+clozure-common-lisp
+		   (handler-case (funcall *old-require* module-name)
+		     (ccl::simple-file-error (c)
+		       (tell-user-generic (format nil "CCL barfs on ~A: ~A ~ignoring" module-name c))))
+		   #-clozure-common-lisp
+		   (funcall *old-require* module-name)))
 	     (format t "===> MADHU: called ~S on ~S~&===> MADHU: RETURNED ~S~&"
 		     *old-require* module-name val)
 	     val))
