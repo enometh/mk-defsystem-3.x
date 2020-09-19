@@ -1126,7 +1126,7 @@
   (:nicknames :mk))
 
 
-#-(or :sbcl :cltl2 :lispworks :ecl :scl :clozure-common-lisp)
+#-(or :sbcl :cltl2 :lispworks :ecl :mkcl :scl :clozure-common-lisp)
 (in-package "MAKE" :nicknames '("MK"))
 
 #+(or :cltl2 :lispworks :scl :clozure-common-lisp)
@@ -1293,7 +1293,8 @@
   #+(or clisp sbcl) t
   #+allegro t
   #+mkcl t
-  #-(or cmu sbcl clisp allegro :clozure-common-lisp mkcl) nil
+  #+ecl t
+  #-(or cmu sbcl clisp allegro :clozure-common-lisp mkcl ecl) nil
   "If T, prevents the redefinition of REQUIRE.
 This is useful for lisps that treat REQUIRE specially in the compiler.")
 
