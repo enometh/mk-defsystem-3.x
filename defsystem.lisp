@@ -629,6 +629,9 @@
 ;;;                 asd file per directory. TODO split this commit
 ;;;                 into defsystem-extras.lisp
 ;;;
+;;;
+;;; 2020-10-15 dsm  support (:feature <feature-name> DEP) in :depends-on
+;;;
 
 ;;;---------------------------------------------------------------------------
 ;;; ISI Comments
@@ -3267,6 +3270,18 @@ used with caution.")
 			  :name name
 			  :indent indent
 			  definition-body)))
+    ;; handle :feature in depends-on ;madhu 201114
+    (when (some #'consp (component-depends-on component))
+      (labels ((resolve-dependency-spec (dep-spec)
+		 (cond ((atom dep-spec) dep-spec)
+		       ((consp dep-spec)
+			(assert (eql (car dep-spec) :feature))
+			(assert (endp (cdddr dep-spec)))
+			(when (featurep (second dep-spec))
+			  (resolve-dependency-spec (third dep-spec)))))))
+	(setf (component-depends-on component)
+	      (remove-if #'null (mapcar #'resolve-dependency-spec
+					(component-depends-on component))))))
     ;; Set up :load-only attribute
     (unless (find :load-only definition-body)
       ;; If the :load-only attribute wasn't specified,
