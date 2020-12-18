@@ -2725,7 +2725,7 @@ D
           (etypecase module-name
             (symbol (string-downcase
                      (string module-name)))
-            (string module-name)))
+            (string (string-downcase module-name))))
 
 	 (module-string-name (let ((p (position #\/ module-string-name-0)))
 			       (if p
