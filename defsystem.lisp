@@ -5383,11 +5383,13 @@ output to *trace-output*.  Returns the shell's exit code."
     
     #+(and lispworks win32)
     (system:call-system-showing-output (format nil "cmd /c ~A" command)
+				       :show-cmd nil :prefix ""
                                        :output-stream output)
 
     #+(and lispworks (not win32))
     (system:call-system-showing-output command
                                        :shell-type shell
+				       :show-cmd nil :prefix ""
                                        :output-stream output)
     
     #+clisp				;XXX not exactly *trace-output*, I know
