@@ -6848,6 +6848,7 @@ otherwise return a default system name computed from PACKAGE-NAME."
 (defpackage "ASDF"
   (:use)
   (:export "FIND-SYSTEM" "LOAD-SYSTEM" "DEFSYSTEM" "CLEAR-SYSTEM"
+   "TEST-OP" "C-SOURCE-FILE" "PERFORM" "LOAD-OP" "LOAD-SOURCE-OP" "OUTPUT-FILES" "COMPILE-OP" "COMPONENT-PATHNAME"
    "TEST-SYSTEM" "PROGRAM-OP"))
 
 ;; if we dont trust your asd files we may need to wrap the dump forms in
