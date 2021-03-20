@@ -4243,10 +4243,21 @@ In these cases the name of the output file is of the form
 	(SCM::INVOKE-WITH-CONCATENATED-FASL-FILE
 	 #'addall pathname COMPILER:*HOST-TARGET-MACHINE*)
         pathname)
+
+      ;; for ecl and mkcl - make sure the system is compiled
+      #+(or ecl mkcl)
+      (ecase ecl-build-type
+	((nil :fasl)
+	 (compile-system system))
+	((:shared-library :static-library)
+	 (let ((*operations-propagate-to-subsystems* t)
+	       (*ecl-compile-file-system-p* t))
+	   (make::compile-system system))))
+
       #+(or ecl mkcl)
       (apply
        (ecase ecl-build-type
-	 ((or nil :fasl) #'compiler:build-fasl)
+	 ((nil :fasl) #'compiler:build-fasl)
 	 (:exe #'compiler:build-program)
 	 (:shared-library #'compiler:build-shared-library)
 	 (:static-library #'compiler:build-static-library))
