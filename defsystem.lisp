@@ -6953,4 +6953,21 @@ OOS if supplied are passed on to OOS"
 
 #+nil
 (missing-deps :lem)
+
+;madhu 181114
+(defun plist-partition (plist keys)
+  ;; Return as values plist-with-keys plist-without-keys
+  (let (ret sans)
+    (loop (multiple-value-bind (indicator value tail)
+	      (get-properties plist keys)
+            (unless tail
+              (return (values ret (nreconc sans plist))))
+	    (setq ret (list* indicator value ret))
+            (loop until (eq plist tail) do
+		  (push (pop plist) sans)
+		  (push (pop plist) sans))
+            (setq plist (cddr plist))))))
+
+(export '(plist-partition))
+
 ;;; end of file -- defsystem.lisp --
