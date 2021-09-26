@@ -6787,17 +6787,26 @@ otherwise return a default system name computed from PACKAGE-NAME."
     ;; apparently some users just stick in a :class
     ;; :package-inferred-system without really meaning it
     (when (and package-inferred-p (not components))
-      (assert (= (length depends-on) 1))
+      ;;(assert (= (length depends-on) 1))
       (let* ((prefix (concatenate 'string (string (second asd-form)) "/"))
-	     (pkg-path
+	     new-depends-on new-components)
+	(loop for dep in depends-on
+	      for pkg-path =
 	      (package-inferred-hack-get-pathname-on-disk
-	       (car depends-on) prefix
-	       (directory-namestring asd-path))))
+	       dep prefix
+	       (directory-namestring asd-path))
+	      do
 	(assert pkg-path nil "Could not infer the path to the package file")
 	(multiple-value-bind (ret1 ignored-deps1)
 	    (package-inferred-hack-generate-file-list pkg-path prefix)
-	  (setq depends-on ignored-deps1)
-	  (setq components ret1))))
+	  (setq new-depends-on (append new-depends-on ignored-deps1))
+	  (setq new-components (append new-components
+				       ret1
+				       `((:file ,(package-inferred-prefixp
+						  prefix
+						  dep)))))))
+	(if new-depends-on (setq depends-on new-depends-on))
+	(if new-components (setq components new-components))))
     `(defsystem ,(second asd-form)
        ,@(if depends-on `(:depends-on ,depends-on))
        ,@(if components `(:components
