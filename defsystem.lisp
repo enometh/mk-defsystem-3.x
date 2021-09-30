@@ -632,6 +632,7 @@
 ;;;
 ;;; 2020-10-15 dsm  support (:feature <feature-name> DEP) in :depends-on
 ;;;
+;;; 2021-09-30 dsm  RUN-SHELL-COMMAND for CLISP
 
 ;;;---------------------------------------------------------------------------
 ;;; ISI Comments
@@ -5413,9 +5414,33 @@ output to *trace-output*.  Returns the shell's exit code."
                                        :shell-type shell
 				       :show-cmd nil :prefix ""
                                        :output-stream output)
-    
-    #+clisp				;XXX not exactly *trace-output*, I know
-    (ext:run-shell-command command :output :terminal :wait t)
+
+    #+clisp
+    (let (input)
+      (unwind-protect
+	   (progn
+	     (setq input (posix:mkstemp (format nil "~A/~A" (or (ext:getenv #+windows "TEMP" #+unix "TMPDIR")  "/tmp") (gensym))
+					:direction :input))
+	     (let* ((cmd (format nil "~A >> ~A" command (truename input)))
+		    (ret  (ext:run-program shell :arguments `("-c" ,cmd) :wait t :output :terminal))
+		    (block-size 4096)
+		    (buffer (make-array block-size :element-type (stream-element-type input)))
+		    count
+		    (actual-block-size (length buffer)))
+	       (loop for read-limit = (if count
+					  (let ((num (- count total-bytes-written)))
+					    (assert (>= num 0))
+					    (if (zerop num)
+						(loop-finish)
+						(min actual-block-size num)))
+					  actual-block-size)
+		     for bytes-read = (read-sequence buffer input :end read-limit)
+		     do (write-sequence buffer output :end bytes-read)
+		     until (< bytes-read read-limit)
+		     summing bytes-read into total-bytes-written
+		     finally (return total-bytes-written))
+	       (if ret (if (minusp ret) (- 128 ret) ret) 0)))
+	(and input (delete-file input))))
 
     #+openmcl
     (nth-value 1
