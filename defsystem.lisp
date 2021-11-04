@@ -6899,13 +6899,14 @@ otherwise return a default system name computed from PACKAGE-NAME."
 
 
 ;; a bogus ASDF package maybe needed to READ asd files before dumping them
-#+nil
-(defpackage "ASDF"
+(defun make-fake-asdf-package ()
+ (defpackage "ASDF"
   (:use)
   (:export "FIND-SYSTEM" "LOAD-SYSTEM" "DEFSYSTEM" "CLEAR-SYSTEM"
    "TEST-OP" "C-SOURCE-FILE" "PERFORM" "LOAD-OP" "LOAD-SOURCE-OP" "OUTPUT-FILES" "COMPILE-OP" "COMPONENT-PATHNAME"
    "TEST-SYSTEM" "PROGRAM-OP"
    "REGISTER-SYSTEM-PACKAGES"))
+)
 
 ;; if we dont trust your asd files we may need to wrap the dump forms in
 (defmacro without-the-sharpdot-reader (&body body)
