@@ -4457,7 +4457,7 @@ In these cases the name of the output file is of the form
                             name
                             (find-system name :load))))
 ;; ;madhu 190517 FIXME!
-	    #-(or CMU CLISP :sbcl :lispworks :cormanlisp scl MKCL)
+	    #-(or CMU CLISP :sbcl :lispworks :cormanlisp scl MKCL ECL)
 	    (declare (special *compile-verbose* #-MCL *compile-file-verbose*)
 		     #-openmcl (ignore *compile-verbose*
 				       #-MCL *compile-file-verbose*)
@@ -7014,5 +7014,18 @@ OOS if supplied are passed on to OOS"
             (setq plist (cddr plist))))))
 
 (export '(plist-partition))
+
+;; ;madhu 211105 TODO - strange behaviour with cl-quickcheck.system:
+;; ;which uses a lowercase string to name the system. loading the
+;; ;sysdef file (which is not available through central-registry) and
+;; ;requiring 'cl-quickcheck puts a cl-quickcheck into *modules* in lw
+;; ;and clisp but does not load the system.
+
+;; ;madhu 211105 TODO clean-system does not remove .lib and .cfp files
+;; ;in clisp. mk-govel-clean is defined in cffi-grovel could be
+;; ;exported from MAKE. or mk-defsystem should provide some hook for
+;; ;delete-binaries operation which cffi-grovel and clisp can use to
+;; ;get rid of other files.
+
 
 ;;; end of file -- defsystem.lisp --
