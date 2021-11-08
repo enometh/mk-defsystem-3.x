@@ -633,6 +633,14 @@
 ;;; 2020-10-15 dsm  support (:feature <feature-name> DEP) in :depends-on
 ;;;
 ;;; 2021-09-30 dsm  RUN-SHELL-COMMAND for CLISP
+;;;
+;;;
+;;; 2021-11-08 dsm  (make-language output-files slot): low-level hook
+;;;                 which takes a component object and produces a
+;;;                 list of pathnames to be cleaned up. also clean up
+;;;                 CLISP .lib and .cfp files in the delete-binaries op
+;;;                 via delete-binaries-compute-output-files
+
 
 ;;;---------------------------------------------------------------------------
 ;;; ISI Comments
@@ -5236,6 +5244,10 @@ In these cases the name of the output file is of the form
   loader		; The function used to load files in the language
   source-extension	; Filename extensions for source files
   binary-extension	; Filename extensions for binary files
+
+  output-files		; Function that produces a list of output
+			; files produced by the compiler, which can be
+			; cleaned up.
 )
 
 (defun print-language (language stream depth)
@@ -5277,13 +5289,15 @@ In these cases the name of the output file is of the form
                            loader
                            (source-extension (car *filename-extensions*))
                            (binary-extension (cdr *filename-extensions*))
+			   output-files
                            )
   (let ((language (gensym "LANGUAGE")))
     `(let ((,language (make-language :name ,name
 				     :compiler ,compiler
 				     :loader ,loader
 				     :source-extension ,source-extension
-				     :binary-extension ,binary-extension)))
+				     :binary-extension ,binary-extension
+				     :output-files ,output-files)))
        (setf (gethash ,name *language-table*) ,language)
        ,name)))
 
@@ -6029,6 +6043,28 @@ or does not contain valid compiled code."
 (component-operation :delete-binaries     'delete-binaries-operation)
 (component-operation 'delete-binaries     'delete-binaries-operation)
 )
+
+#+nil
+(component-language (find-component ':cffi-libffi  '("libffi" "libffi-types")))
+
+#+clisp
+(defun delete-binaries-clisp-output-files (c)
+  (let* ((binary-pname (component-full-pathname c :binary))
+	 (lib (make-pathname :type "lib" :defaults binary-pname))
+	 (cfp (make-pathname :type "cfp" :defaults binary-pname)))
+    (list lib cfp)))
+
+(defun delete-binaries-compute-output-files (c)
+  (append
+   #+clisp
+   (delete-binaries-clisp-output-files c)
+   (let (lang lang-name output-files-function output-files)
+     (when (and (setq lang-name (component-language c))
+		(setq lang (find-language lang-name))
+		(setq output-files-function (language-output-files lang))
+		(setq output-files (funcall output-files-function c)))
+       output-files))))
+
 (defun delete-binaries-operation (component force)
   (when (or (eq force :all)
 	    (eq force t)
@@ -6040,8 +6076,12 @@ or does not contain valid compiled code."
       (when (probe-file binary-pname)
 	(with-tell-user ("Deleting binary"   component :binary)
 			(or *oos-test*
-			    (delete-file binary-pname)))))))
-
+			    (delete-file binary-pname)))))
+    (dolist (f (delete-binaries-compute-output-files component))
+      (when (probe-file f)
+	(with-tell-user ("Deleting output files" component :binary)
+			(or *oos-test*
+			    (delete-file f)))))))
 
 ;; when the operation = :compile, we can assume the binary exists in test mode.
 ;;	((and *oos-test*
@@ -7020,12 +7060,5 @@ OOS if supplied are passed on to OOS"
 ;; ;sysdef file (which is not available through central-registry) and
 ;; ;requiring 'cl-quickcheck puts a cl-quickcheck into *modules* in lw
 ;; ;and clisp but does not load the system.
-
-;; ;madhu 211105 TODO clean-system does not remove .lib and .cfp files
-;; ;in clisp. mk-govel-clean is defined in cffi-grovel could be
-;; ;exported from MAKE. or mk-defsystem should provide some hook for
-;; ;delete-binaries operation which cffi-grovel and clisp can use to
-;; ;get rid of other files.
-
 
 ;;; end of file -- defsystem.lisp --
