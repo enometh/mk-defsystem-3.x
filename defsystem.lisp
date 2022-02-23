@@ -640,6 +640,8 @@
 ;;;                 list of pathnames to be cleaned up. also clean up
 ;;;                 CLISP .lib and .cfp files in the delete-binaries op
 ;;;                 via delete-binaries-compute-output-files
+;;;
+;;; 2022-01-23 dsm  abcl support. courtesy marcoxa's c-l.net branch.
 
 
 ;;;---------------------------------------------------------------------------
@@ -699,6 +701,7 @@
 ;;;       Scieneer Common Lisp (SCL) 1.1
 ;;;       Macintosh Common Lisp
 ;;;       ECL
+;;;       ABCL
 ;;;
 ;;;    DEFSYSTEM needs to be tested in the following lisps:
 ;;;       OpenMCL
@@ -959,7 +962,10 @@
       :clozure-common-lisp
       :ecl
       :mkcl
-      (and allegro-version>= (version>= 4 1)))
+      (and allegro-version>= (version>= 4 1))
+
+      :abcl :armedbear
+      )
 (eval-when #-(or :lucid)
            (:compile-toplevel :load-toplevel :execute)
 	   #+(or :lucid)
@@ -1079,7 +1085,7 @@
 ;;; MAKE package. A nice side-effect is that the short nickname
 ;;; MK is my initials.
 
-#+(or clisp cormanlisp ecl mkcl (and gcl defpackage) sbcl)
+#+(or clisp cormanlisp ecl mkcl (and gcl defpackage) sbcl abcl)
 (defpackage "MAKE" (:use "COMMON-LISP") (:nicknames "MK"))
 
 ;;; For CLtL2 compatible lisps...
@@ -1116,7 +1122,7 @@
 ;;; The code below, is originally executed also for CMUCL. However I
 ;;; believe this is wrong, since CMUCL comes with its own defpackage.
 ;;; I added the extra :CMU in the 'or'.
-#+(and :cltl2 (not (or :cmu :clisp :sbcl
+#+(and :cltl2 (not (or :cmu :clisp :sbcl :abcl
 		       (and :excl (or :allegro-v4.0 :allegro-v4.1))
 		       :mcl)))
 (eval-when (compile load eval)
@@ -1138,7 +1144,25 @@
   (:nicknames :mk))
 
 
-#-(or :sbcl :cltl2 :lispworks :ecl :mkcl :scl :clozure-common-lisp)
+
+;;;; madhu 220223 if we defined the MAKE package before loading this
+;;;; file (to set some defvars before the defvars are defined), then
+;;;; abcl fails because a subsequent defpackage form does not pick up
+;;;; :USE and :NICKNAMES.
+(eval-when (load eval compile)
+(let ((cl (find-package "CL")))
+  (unless (find cl (package-use-list "MAKE"))
+    (warn "package: ADDING CL to MAKE use list")
+    (use-package "CL" "MAKE")))
+
+(let ((nicknames (package-nicknames "MAKE")))
+  (unless (find "MK" nicknames :test #'equal)
+    (warn "package: ADDING nickname MK to MAKE")
+    (rename-package (find-package "MAKE")  "MAKE"
+		    (cons "MK" nicknames))))
+)
+
+#-(or :abcl :sbcl :cltl2 :lispworks :ecl :mkcl :scl :clozure-common-lisp)
 (in-package "MAKE" :nicknames '("MK"))
 
 #+(or :cltl2 :lispworks :scl :clozure-common-lisp)
@@ -1146,6 +1170,9 @@
   (in-package "MAKE"))
 
 #+(or ecl mkcl)
+(in-package "MAKE")
+
+#+:abcl
 (in-package "MAKE")
 
 ;;; *** Marco Antoniotti <marcoxa@icsi.berkeley.edu> 19970105
@@ -1168,6 +1195,9 @@
 (provide 'make)
 
 #-(or :cltl2 :lispworks)
+(provide 'make)
+
+#+(or :abcl :armedbear)
 (provide 'make)
 
 (pushnew :mk-defsystem *features*)
@@ -1714,6 +1744,7 @@ s/^[^M]*IRIX Execution Environment 1, *[a-zA-Z]* *\\([^ ]*\\)/\\1/p\\
   #+mcl       "mcl"
   #+coral     "coral"
   #+gclisp    "gclisp"
+  #+(or abcl armedbear)      "abcl"
   )
 
 
@@ -4465,7 +4496,7 @@ In these cases the name of the output file is of the form
                             name
                             (find-system name :load))))
 ;; ;madhu 190517 FIXME!
-	    #-(or CMU CLISP :sbcl :lispworks :cormanlisp scl MKCL ECL)
+	    #-(or :abcl CMU CLISP :sbcl :lispworks :cormanlisp scl MKCL ECL)
 	    (declare (special *compile-verbose* #-MCL *compile-file-verbose*)
 		     #-openmcl (ignore *compile-verbose*
 				       #-MCL *compile-file-verbose*)
@@ -5054,6 +5085,7 @@ In these cases the name of the output file is of the form
                :clozure-common-lisp
 	       :ecl
 	       :mkcl
+	       :abcl
 	       )
 	 'lisp:require
 	 #+(and :excl :allegro-v4.0) 'cltl1:require
@@ -5063,6 +5095,7 @@ In these cases the name of the output file is of the form
 	 #+(or :openmcl :clozure-common-lisp)'cl:require
 	 #+(and :mcl (not :openmcl)) 'ccl:require
 	 #+(or :ecl :mkcl) 'cl:require
+	 #+(or :abcl :armedbear) 'cl:require
 	 ))
 
   (unless *dont-redefine-require*
@@ -5074,13 +5107,15 @@ In these cases the name of the output file is of the form
                    :mcl
                    :sbcl
                    :lispworks
-                   :clozure-common-lisp) 'lisp:require
+                   :clozure-common-lisp
+		   :abcl) 'lisp:require
 	     #+(and :excl :allegro-v4.0) 'cltl1:require
 	     #+:lispworks3.1 'common-lisp::require
 	     #+:sbcl 'cl:require
 	     #+(and :lispworks (not :lispworks3.1)) 'system::require
 	     #+:openmcl 'cl:require
 	     #+(and :mcl (not :openmcl)) 'ccl:require
+	     #+(or :abcl :armedbear) 'cl:require
 	     )
 	    (symbol-function 'new-require))
       #+:mkcl
@@ -5357,6 +5392,7 @@ In these cases the name of the output file is of the form
 		(format nil "~A~@[ ~{~A~^ ~}~]" program arguments))
   #+clisp (#+lisp=cl ext:run-program #-lisp=cl lisp:run-program
                      program :arguments arguments)
+  #+abcl (ext:run-shell-command cmd-string)
   )
 
 #+(or symbolics (and :lispworks :harlequin-pc-lisp))
@@ -5466,6 +5502,8 @@ output to *trace-output*.  Returns the shell's exit code."
 				 :wait t)))
 
     #+ecl (nth-value 1 (ext:run-program shell (list "-c" command) :input nil :output output :error output))
+
+    #+abcl (ext:run-shell-command command) ; Just a place holder FTTB.
 
     #-(or ecl openmcl clisp lispworks allegro mkcl scl cmu sbcl)
     (error "RUN-SHELL-PROGRAM not implemented for this Lisp")
