@@ -1336,7 +1336,8 @@
   #+allegro t
   #+mkcl t
   #+ecl t
-  #-(or cmu sbcl clisp allegro :clozure-common-lisp mkcl ecl) nil
+  #+abcl t
+  #-(or abcl cmu sbcl clisp allegro :clozure-common-lisp mkcl ecl) nil
   "If T, prevents the redefinition of REQUIRE.
 This is useful for lisps that treat REQUIRE specially in the compiler.")
 
@@ -5247,6 +5248,17 @@ In these cases the name of the output file is of the form
 		      :verbose nil))))
 
 (pushnew 'mkcl-mk-defsystem-module-provider mk-ext:*module-provider-functions*))
+
+#+abcl
+(progn
+(defun abcl-mk-defsystem-module-provider (name)
+  (let ((module-name (string-downcase (string name))))
+    (when (mk:find-system module-name :load-or-nil)
+      (mk:load-system module-name
+		      :compile-during-load t
+		      :verbose nil))))
+
+(pushnew 'abcl-mk-defsystem-module-provider system::*module-provider-functions*))
 
 
 ;;; ********************************
