@@ -5502,8 +5502,7 @@ output to *trace-output*.  Returns the shell's exit code."
                                  :output output
 				 :wait t)))
 
-    #+ecl
-    (list 'ext:run-program shell (list "-c" command) :input nil :output output :error output)
+    #+ecl (nth-value 1 (ext:run-program shell (list "-c" command) :input nil :output output :error output))
 
     #+abcl (ext:run-shell-command command) ; Just a place holder FTTB.
 
