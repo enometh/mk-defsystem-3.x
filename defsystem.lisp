@@ -642,6 +642,8 @@
 ;;;                 via delete-binaries-compute-output-files
 ;;;
 ;;; 2022-01-23 dsm  abcl support. courtesy marcoxa's c-l.net branch.
+;;;
+;;; 2022-05-03 dsm  stab at already-defined-systems
 
 
 ;;;---------------------------------------------------------------------------
@@ -7099,5 +7101,29 @@ OOS if supplied are passed on to OOS"
 ;; ;sysdef file (which is not available through central-registry) and
 ;; ;requiring 'cl-quickcheck puts a cl-quickcheck into *modules* in lw
 ;; ;and clisp but does not load the system.
+
+;;madhu 220503  - for mcclim additions
+(defun already-loaded-systems ()
+  "Return a list of the names of the systems that have been successfully
+loaded so far."
+  (mapcar #'component-name
+	  (remove-if-not (lambda (s)
+			   (and (find (canonicalize-system-name
+				       (component-name s))
+				      *modules* :test #'equal)
+				;;#+nil
+				(component-load-time s)))
+			 (defined-systems))))
+
+#+nil
+(defun mk::coerce-name (name)
+  (typecase name
+    (mk::component (mk::component-name name))
+    (symbol (string-downcase name))
+    (string name)
+    (t (error "Invalid component designator: ~S" name))))
+
+#+nil
+(already-loaded-systems)
 
 ;;; end of file -- defsystem.lisp --
