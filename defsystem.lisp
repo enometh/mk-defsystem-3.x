@@ -7110,7 +7110,7 @@ loaded so far."
 	  (remove-if-not (lambda (s)
 			   (and (find (canonicalize-system-name
 				       (component-name s))
-				      *modules* :test #'equal)
+				      *modules* :test #'equalp)
 				;;#+nil
 				(component-load-time s)))
 			 (defined-systems))))
