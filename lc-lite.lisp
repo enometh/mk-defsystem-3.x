@@ -148,8 +148,8 @@ root.")
 			     (pathname-directory *binary-directory-fasl-root*)
 			     last
 			     *binary-directory-pattern*
-			     dirnames
-			     *binary-directory-version*))))
+			     *binary-directory-version*
+			     dirnames))))
       p)))
 
 (defvar *binary-directory-ensure-directories-exist* t)
