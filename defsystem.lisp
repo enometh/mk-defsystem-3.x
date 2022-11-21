@@ -2812,10 +2812,6 @@ D
                    (probe-file lib-file-pathname)))))
     ))
 
-;;madhu 200404
-;; store the path where the defsystem was loaded from
-
-(defvar *defsystem-to-defsystem-file-map* (make-hash-table :test #'equal))
 
 (defun compute-system-path (module-name &optional definition-pname)
   (if (typep module-name 'component)
