@@ -7133,8 +7133,13 @@ otherwise return a default system name computed from PACKAGE-NAME."
 ;;; generate defsystem files from asd definitions
 ;;;
 
-(defun asd-hack-dump-defsystem-file (target-file name root-dir &optional
-				     (asd-file-list (get-asd-file-list root-dir)))
+(defun asd-hack-dump-defsystem-file (target-file name root-dir &key
+				     (asd-file-list
+				      (get-asd-file-list root-dir))
+				     skip-source-p
+				     (skip-binary-p skip-source-p)
+				     (if-exists :supersede)
+				     root-dir-form)
   (let* ((source-dir (format nil "*~(~A~)-source-dir*" name))
 	 (binary-dir (format nil "*~(~A~)-binary-dir*" name))
 	 (forms (sort (loop for f in asd-file-list
@@ -7146,16 +7151,26 @@ otherwise return a default system name computed from PACKAGE-NAME."
 		      #'compare-system-names
 		      :key #'second)))
     (with-open-file (stream target-file :direction :output
-			    :if-exists :supersede)
-      (format stream "(in-package \"CL-USER\")~%
-\(defvar ~A ~S)
-\(defvar ~A (binary-directory ~A))~%~%"
-	      source-dir root-dir
-	      binary-dir source-dir)
+			    :if-exists if-exists)
+      (format stream "(in-package \"CL-USER\")~%")
+      (unless skip-source-p
+	(format stream "(defvar ~A " source-dir)
+	(etypecase root-dir-form
+	  (string (write-string root-dir-form stream))
+	  (cons (format stream "~S" root-dir-form))
+	  (null (format stream "~:[~S~;(translate-logical-pathname ~S)~]"
+			(pathname-logical-p root-dir) root-dir)))
+	(write-line ")" stream))
+      (unless skip-binary-p
+	(format stream "(defvar ~A (binary-directory ~A))~%"
+		binary-dir source-dir))
+      (terpri stream)
       (loop for form in forms do
-	    (format-mk-form form stream
-			    :source-dir source-dir
-			    :binary-dir binary-dir)
+	    (apply #'format-mk-form form stream
+		   (append
+		     ;; FIXME: should these be forced to be physical pathnames?
+		    (unless skip-source-p `(:source-dir ,source-dir))
+		    (unless skip-binary-p `(:binary-dir ,binary-dir))))
 	    (format stream "~%~%#+nil~%(mk:oos ")
 	    (format-mk-name (second form) stream)
 	    (format stream " :load :compile-during-load t)~%~%")))))
