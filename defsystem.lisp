@@ -3522,11 +3522,13 @@ used with caution.")
   (case (component-type component)
     ((:defsystem :system)		; Absolute Pathname
      ;; Set the root-dir to be the absolute pathname
-     (setf (component-root-dir component pathname-type)
-	   (or (component-pathname component pathname-type)
-	       (when (eq pathname-type :binary)
-		 ;; When the binary root is nil, use source.
-		 (component-root-dir component :source))) )
+     ;; ;madhu 221122 - unless defined  - oops misssed a spot
+     (unless (component-root-dir component pathname-type)
+       (setf (component-root-dir component pathname-type)
+	     (or (component-pathname component pathname-type)
+		 (when (eq pathname-type :binary)
+		   ;; When the binary root is nil, use source.
+		   (component-root-dir component :source))) ))
      ;; Set the relative pathname to be nil
      (setf (component-pathname component pathname-type)
 	   nil));; should this be "" instead?
