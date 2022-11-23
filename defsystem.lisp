@@ -655,6 +655,13 @@
 ;;;                 is determined by the lisp implementation version,
 ;;;                 architecture and the truename of the file being
 ;;;                 compiled. (see comments below)
+;;;
+;;;
+;;;                 *translate-output-for-user-cache-use-sxhash* if T
+;;;                 replaces the full subpath of the source root
+;;;                  within the cache directory direcory with
+;;;                 a single directory component representing the
+;;;                 sxhash of the source root directory.
 
 
 ;;;---------------------------------------------------------------------------
@@ -3565,7 +3572,13 @@ WORK.  The system MUST contain files relative to the defsystem file
 location.
 
 For a defsystem file at /a/b/c/d.system we try to put binaries under
-~/.cache/fasl/<system-name>/binary-<lisp-name>/<lisp-version>/a/b/c.")
+~/.cache/fasl/<system-name>/binary-<lisp-name>/<lisp-version>/a/b/c.
+
+If MK:*TRANSLATE-OUTPUT-FOR-USER-CACHE-USE-SXHASH* is non-NIL, then the
+binaries would be under
+~/.cache/fasl/<system-name>/binary-<lisp-name>/<lisp-version>/SX
+where SX is the sxhash of the pathname /a/b/c
+")
 
 (defun slynk-unique-dir-name ()
   "Taken from https://github.com/joaotavora/sly slynk/slynk-loader.lisp
@@ -3652,6 +3665,9 @@ operating system, and hardware architecture."
 #+nil
 (pathname-directory (slynk-unique-dir-name))
 
+(export '*translate-output-for-user-cache-use-sxhash*)
+(defvar *translate-output-for-user-cache-use-sxhash* T)
+
 (defun translate-output-for-user-cache-dir (src &rest strings)
   (assert (eql :ABSOLUTE (car (pathname-directory src))) nil
       "See Documentation/Comments before using OUTPUT-TRANSLATIONS-STRATEGY :USER-CACHE")
@@ -3663,7 +3679,9 @@ operating system, and hardware architecture."
    (append (pathname-directory CL-USER::*USER-CACHE-DIR*)
 	   strings
 	   (cdr (pathname-directory (slynk-unique-dir-name)))
-	   (cdr (pathname-directory src)))
+	   (if *translate-output-for-user-cache-use-sxhash*
+	       (list (format nil "~D" (sxhash src)))
+	       (cdr (pathname-directory src))))
    :defaults CL-USER::*USER-CACHE-DIR*))
 
 #+nil
