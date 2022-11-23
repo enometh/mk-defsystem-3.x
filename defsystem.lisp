@@ -644,6 +644,17 @@
 ;;; 2022-01-23 dsm  abcl support. courtesy marcoxa's c-l.net branch.
 ;;;
 ;;; 2022-05-03 dsm  stab at already-loaded-systems
+;;;
+;;; 2022-10-23 dsm  handle output-translations. (SETQ
+;;;                 MAKE:*OUTPUT-TRANSLATIONS-STRATEGY* :USER-CACHE)
+;;;                 to actually support multiple lisps. Set
+;;;                 CL-USER::*USER-CACHE-DIR* to ~/.cache outside
+;;;                 defsystem, and system definitions without an
+;;;                 explict :binary-pathname will have their binaries
+;;;                 placed under this directory, in a location which
+;;;                 is determined by the lisp implementation version,
+;;;                 architecture and the truename of the file being
+;;;                 compiled. (see comments below)
 
 
 ;;;---------------------------------------------------------------------------
@@ -3520,11 +3531,150 @@ used with caution.")
   (generate-component-pathname component parent :source)
   (generate-component-pathname component parent :binary))
 
+
+;;;madhu 221123 handle output-translations
+;;;
 
+(defvar CL-USER::*USER-CACHE-DIR*
+  (merge-pathnames ".cache/" (user-homedir-pathname)))
+
+(dolist (sym '(CL-USER::*USER-CACHE-DIR*))
+  (unless (documentation sym 'variable)
+    (setf (documentation sym  'variable)
+	  "Used by MK-DEFSYSTEM-3 OUTPUT-TRANSLATIONS-STRATEGY :USER-CACHE.
+If this variable is to be used, it should set before the
+defsystem.lisp file is loaded. The value defined here is not reliable")))
+
+#+nil
+(probe-file CL-USER::*USER-CACHE-DIR*)
+
+(export '*output-translations-strategy*)
+(defvar *output-translations-strategy* :default
+  ":DEFAULT is the legacy behaviour (and all that /that/ means.).
+
+A value of :USER-CACHE puts binary output objects under ~/.cache (see
+CL-USER::USER-CACHE-DIR) /under some circumstances/:
+
+:BINARY-ROOT-DIR and :BINARY-PATHNAME parameters are NOT specified in
+the defsystem form.
+
+If the :SOURCE-PATHNAME is not specified in the defsystem form, the
+defsystem file MUST explicitly be LOADed so it defaults to a valid
+absolute path.  Interactively evaluating the defsystem form will NOT
+WORK.  The system MUST contain files relative to the defsystem file
+location.
+
+For a defsystem file at /a/b/c/d.system we try to put binaries under
+~/.cache/fasl/<system-name>/binary-<lisp-name>/<lisp-version>/a/b/c.")
+
+(defun slynk-unique-dir-name ()
+  "Taken from https://github.com/joaotavora/sly slynk/slynk-loader.lisp
+on 221122. Returns a relative pathname of the form
+binary-<lisp>/<version>_<arch>."
+  (let (
+	(*implementation-features*
+  '(:allegro :lispworks :sbcl :clozure :cmu :clisp :ccl :corman :cormanlisp
+    :armedbear :gcl :ecl :scl :mkcl :clasp))
+
+	(*os-features*
+  '(:macosx :linux :windows :mswindows :win32 :solaris :darwin :sunos :hpux
+    :unix))
+
+	(*architecture-features*
+  '(:powerpc :ppc :ppc64 :x86 :x86-64 :x86_64 :amd64 :i686 :i586 :i486 :pc386 :iapx386
+    :sparc64 :sparc :hppa64 :hppa :arm :armv5l :armv6l :armv7l :arm64 :aarch64
+    :pentium3 :pentium4
+    :mips :mipsel
+    :java-1.4 :java-1.5 :java-1.6 :java-1.7)))
+    (labels (
+	   #+ecl
+	   ( ecl-version-string ()
+  (format nil "~A~@[-~A~]"
+          (lisp-implementation-version)
+          (when (find-symbol "LISP-IMPLEMENTATION-VCS-ID" :ext)
+            (let ((vcs-id (funcall (read-from-string "ext:lisp-implementation-vcs-id"))))
+              (when (>= (length vcs-id) 8)
+                (subseq vcs-id 0 8))))))
+
+	   #+clasp
+	   (clasp-version-string ()
+  (format nil "~A~@[-~A~]"
+          (lisp-implementation-version)
+          (core:lisp-implementation-id)))
+
+	   (lisp-version-string ()
+  #+(or clozure cmu) (substitute-if #\_ (lambda (x) (find x " /"))
+                                    (lisp-implementation-version))
+  #+(or cormanlisp scl mkcl) (lisp-implementation-version)
+  #+sbcl (format nil "~a~:[~;-no-threads~]"
+                 (lisp-implementation-version)
+                 #+sb-thread nil
+                 #-sb-thread t)
+  #+lispworks (lisp-implementation-version)
+  #+allegro   (format nil "~@{~a~}"
+                      excl::*common-lisp-version-number*
+                      (if (string= 'lisp "LISP") "A" "M")     ; ANSI vs MoDeRn
+                      (if (member :smp *features*) "s" "")
+                      (if (member :64bit *features*) "-64bit" "")
+                      (excl:ics-target-case
+                       (:-ics "")
+                       (:+ics "-ics")))
+  #+clisp     (let ((s (lisp-implementation-version)))
+                (subseq s 0 (position #\space s)))
+  #+armedbear (lisp-implementation-version)
+  #+ecl (ecl-version-string) ))
+  "Return a name that can be used as a directory name that is
+unique to a Lisp implementation, Lisp implementation version,
+operating system, and hardware architecture."
+  (flet ((first-of (features)
+           (loop for f in features
+                 when (find f *features*) return it))
+         (maybe-warn (value fstring &rest args)
+           (cond (value)
+                 (t (apply #'warn fstring args)
+                    "unknown"))))
+    (let ((lisp (maybe-warn (first-of *implementation-features*)
+                            "No implementation feature found in ~a."
+                            *implementation-features*))
+          (os   (maybe-warn (first-of *os-features*)
+                            "No os feature found in ~a." *os-features*))
+          (arch (maybe-warn (first-of *architecture-features*)
+                            "No architecture feature found in ~a."
+                            *architecture-features*))
+          (version (maybe-warn (lisp-version-string)
+                               "Don't know how to get Lisp ~
+                                implementation version.")))
+      (make-pathname
+       :directory (list :relative
+			(format nil "binary-~(~A~)" lisp)
+			(format nil "~(~@{~a~^-~}~)" version os arch))))))))
+
+#+nil
+(pathname-directory (slynk-unique-dir-name))
+
+(defun translate-output-for-user-cache-dir (src &rest strings)
+  (assert (eql :ABSOLUTE (car (pathname-directory src))) nil
+      "See Documentation/Comments before using OUTPUT-TRANSLATIONS-STRATEGY :USER-CACHE")
+  (assert (eql :ABSOLUTE (car (pathname-directory CL-USER::*USER-CACHE-DIR*))) nil
+      "See Documentation/Comments before using OUTPUT-TRANSLATIONS-STRATEGY :USER-CACHE")
+  (make-pathname
+   :name nil :version nil :type nil
+   :directory
+   (append (pathname-directory CL-USER::*USER-CACHE-DIR*)
+	   strings
+	   (cdr (pathname-directory (slynk-unique-dir-name)))
+	   (cdr (pathname-directory src)))
+   :defaults CL-USER::*USER-CACHE-DIR*))
+
+#+nil
+(translate-output-for-user-cache-dir "/path/to/system/a/b/c"
+				     "fasl" "system")
+
+
 ;;; generate-component-pathnames --
 ;;; maybe file's inheriting of pathnames should be moved elsewhere?
 
-(defun generate-component-pathname (component parent pathname-type)
+(defun generate-component-pathname (component parent pathname-type &aux ots-p)
   ;; Pieces together a pathname for the component based on its component-type.
   ;; Assumes source defined first.
   ;; Null binary pathnames inherit from source instead of the component's
@@ -3541,7 +3691,28 @@ used with caution.")
 	     (or (component-pathname component pathname-type)
 		 (when (eq pathname-type :binary)
 		   ;; When the binary root is nil, use source.
+		   (setq ots-p t)
 		   (component-root-dir component :source))) ))
+
+     ;;madhu 221123 handle output-translations
+     (when (and (eq *output-translations-strategy* :user-cache)
+		(eq pathname-type :binary))
+       (cond (ots-p
+	      (let* ((bin (component-root-dir component :binary))
+		     (src (component-root-dir component :source))
+		     (rep (translate-output-for-user-cache-dir
+			   src "fasl" (canonicalize-system-name
+				       (component-name component)))))
+		(setf (component-root-dir component :binary) rep)
+		(format t "defsystem output-translations-strategy :user-cache
+source ~S
+overriding binary root ~S with ~S~&"
+			src bin rep)))
+	     (t (format t "defsystem output-translation-strategy :user-cache
+ignored for supplied binary-root ~S: ~S~&"
+			(component-name component)
+			(component-root-dir component :binary)))))
+
      ;; Set the relative pathname to be nil
      (setf (component-pathname component pathname-type)
 	   nil));; should this be "" instead?
