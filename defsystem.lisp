@@ -7114,7 +7114,7 @@ otherwise return a default system name computed from PACKAGE-NAME."
 (defun get-asd-file-list (dir)
   (mk::split-string
    (with-output-to-string (stream)
-     (let ((ret (mk::run-shell-command "IFS=$'\n'; find ~S -name '*.asd' -type f" (list dir)
+     (let ((ret (mk::run-shell-command "IFS=$'\n'; find ~S -name '*.asd' -type f" (list (namestring (translate-logical-pathname dir)))
 				   :output stream)))
        (assert (zerop ret) nil "Error running program: ~A" (get-output-stream-string stream))))
    :item #\Newline))
@@ -7139,7 +7139,7 @@ otherwise return a default system name computed from PACKAGE-NAME."
 	 (binary-dir (format nil "*~(~A~)-binary-dir*" name))
 	 (forms (sort (loop for f in asd-file-list
 			    for asd-form = (file-asd-form f)
-			    for subdirs = (extract-subdirs f root-dir)
+			    for subdirs = (extract-subdirs f (translate-logical-pathname root-dir))
 			    for mk-form = (with-simple-restart (skip "Skip")
 					    (make-mk-form asd-form subdirs f))
 			    when mk-form collect it)
