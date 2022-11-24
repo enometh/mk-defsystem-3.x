@@ -2249,7 +2249,8 @@ ABS: NIL          REL: NIL               Result: ""
        ;; For use with logical pathnames package.
        (append-logical-directories-mk absolute-directory relative-directory))
      |#
-      #+NIL				; madhu 060906
+;madhu 221124
+;;      #+NIL				; madhu 060906
       ((namestring-probably-logical absolute-directory)
        ;; A simplistic stab at handling logical pathnames
        (append-logical-pnames absolute-directory relative-directory))
