@@ -6948,7 +6948,7 @@ otherwise return a default system name computed from PACKAGE-NAME."
 	(assert (keywordp key))
 	(format stream "~(~S~) " key)
 	(cond ((atom val)
-	       (if (eql key :module)
+	       (if (find key '(:module :if-feature))
 		   (format stream "~(~S~)" val)
 		   (format stream "~S" val)))
 	      ((eql key :components)
@@ -6957,6 +6957,8 @@ otherwise return a default system name computed from PACKAGE-NAME."
 	      ((eql key :depends-on)
 	       (format-mk-depends-on-list val
 					  stream :indent (+ indent 11 1)))
+	      ((eql key :if-feature)
+	       (format stream "~(~S~)" val))
 	      (t (format stream "~S" val)))
 	(when (cddr x)
 	  (terpri stream)
