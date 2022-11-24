@@ -2088,12 +2088,12 @@ s/^[^M]*IRIX Execution Environment 1, *[a-zA-Z]* *\\([^ ]*\\)/\\1/p\\
 			(pop rel-directory)))
 	 ;; rtoy: Why should any Lisp want rel-file?  Shouldn't using
 	 ;; rel-name and rel-type work for every Lisp?
-	 ;; ;madhu 200229 add clozure
-         #-(or :MCL :sbcl :clisp :cmu :clozure-common-lisp) (rel-file (file-namestring rel-dir))
+	 ;; ;madhu 200229 add clozure ;madhu 221124 ecl (lpn), lispworks
+         #-(or :MCL :sbcl :clisp :cmu :ecl :clozure-common-lisp) (rel-file (file-namestring rel-dir))
 	 ;; Stig (July 2001);
 	 ;; These values seems to help clisp as well
-	 #+(or :MCL :sbcl :clisp :cmu :clozure-common-lisp) (rel-name (pathname-name rel-dir))
-	 #+(or :MCL :sbcl :clisp :cmu :clozure-common-lisp) (rel-type (pathname-type rel-dir))
+	 #+(or :MCL :sbcl :clisp :cmu :ecl :clozure-common-lisp :lispworks) (rel-name (pathname-name rel-dir))
+	 #+(or :MCL :sbcl :clisp :cmu :ecl :clozure-common-lisp :lispworks) (rel-type (pathname-type rel-dir))
 	 (directory nil))
 
     ;; TI Common Lisp pathnames can return garbage for file names because
@@ -2146,11 +2146,11 @@ s/^[^M]*IRIX Execution Environment 1, *[a-zA-Z]* *\\([^ ]*\\)/\\1/p\\
                     :directory
                     directory
 		    :name
-		    #-(or :sbcl :MCL :clisp :cmu :clozure-common-lisp) rel-file
-		    #+(or :sbcl :MCL :clisp :cmu :clozure-common-lisp) rel-name
+		    #-(or :sbcl :MCL :clisp :cmu :ecl :clozure-common-lisp :lispworks) rel-file
+		    #+(or :sbcl :MCL :clisp :cmu :ecl :clozure-common-lisp :lispworks) rel-name
 
-		    #+(or :sbcl :MCL :clisp :cmu :clozure-common-lisp) :type
-		    #+(or :sbcl :MCL :clisp :cmu :clozure-common-lisp) rel-type
+		    #+(or :sbcl :MCL :clisp :cmu :ecl :clozure-common-lisp :lispworks) :type
+		    #+(or :sbcl :MCL :clisp :cmu :ecl :clozure-common-lisp :lispworks) rel-type
 		    ))))
 
 
