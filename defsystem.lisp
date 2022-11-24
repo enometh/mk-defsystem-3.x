@@ -662,6 +662,9 @@
 ;;;                  within the cache directory direcory with
 ;;;                 a single directory component representing the
 ;;;                 sxhash of the source root directory.
+;;;
+;;; 2022-11-24 dsm  use a single mk-defsystem-module-provider-function for
+;;;                 all lisps that provide module-provider-hooks
 
 
 ;;;---------------------------------------------------------------------------
@@ -5348,42 +5351,24 @@ In these cases the name of the output file is of the form
 ;;; Well, let's add some more REQUIRE hacking; specifically for SBCL,
 ;;; and, eventually, for CMUCL.
 
-#+sbcl
-(eval-when (:compile-toplevel :load-toplevel :execute)
-
-(defun sbcl-mk-defsystem-module-provider (name)
-  ;; Let's hope things go smoothly.
-    (let ((module-name (string-downcase (string name))))
-      (when (mk:find-system module-name :load-or-nil)
-	(mk:load-system module-name
-			:compile-during-load t
-			:verbose nil))))
-
-(pushnew 'sbcl-mk-defsystem-module-provider sb-ext:*module-provider-functions*)
-)
-
-#+#.(cl:if (cl:and (cl:find-package "EXT") (cl:find-symbol "*MODULE-PROVIDER-FUNCTIONS*" "EXT")) '(and) '(or))
-(progn
-  (defun cmucl-mk-defsystem-module-provider (name)
-    (let ((module-name (string-downcase (string name))))
-      (when (mk:find-system module-name :load-or-nil)
-	(mk:load-system module-name
-			:compile-during-load t
-			:verbose nil))))
-
-  (pushnew 'cmucl-mk-defsystem-module-provider ext:*module-provider-functions*)
-  )
-
-#+:clozure-common-lisp
-(progn
-(defun clozure-mk-defsystem-module-provider (name)
+;;madhu 221124 use a single module provider function for all lisps
+(defun mk-defsystem-module-provider (name)
   (let ((module-name (string-downcase (string name))))
     (when (mk:find-system module-name :load-or-nil)
       (mk:load-system module-name
 		      :compile-during-load t
 		      :verbose nil))))
-(pushnew 'clozure-mk-defsystem-module-provider
-	 ccl:*module-provider-functions*))
+
+
+#+sbcl
+(eval-when (:compile-toplevel :load-toplevel :execute)
+(pushnew 'mk-defsystem-module-provider sb-ext:*module-provider-functions*))
+
+#+#.(cl:if (cl:and (cl:find-package "EXT") (cl:find-symbol "*MODULE-PROVIDER-FUNCTIONS*" "EXT")) '(and) '(or))
+(pushnew 'mk-defsystem-module-provider ext:*module-provider-functions*)
+
+#+:clozure-common-lisp
+(pushnew 'mk-defsystem-module-provider ccl:*module-provider-functions*)
 
 
 #+allegro
@@ -5442,26 +5427,10 @@ In these cases the name of the output file is of the form
 	  (append sys::*require-search-list* (list form)))))
 
 #+mkcl
-(progn
-(defun mkcl-mk-defsystem-module-provider (name)
-  (let ((module-name (string-downcase (string name))))
-    (when (mk:find-system module-name :load-or-nil)
-      (mk:load-system module-name
-		      :compile-during-load t
-		      :verbose nil))))
-
-(pushnew 'mkcl-mk-defsystem-module-provider mk-ext:*module-provider-functions*))
+(pushnew 'mk-defsystem-module-provider mk-ext:*module-provider-functions*)
 
 #+abcl
-(progn
-(defun abcl-mk-defsystem-module-provider (name)
-  (let ((module-name (string-downcase (string name))))
-    (when (mk:find-system module-name :load-or-nil)
-      (mk:load-system module-name
-		      :compile-during-load t
-		      :verbose nil))))
-
-(pushnew 'abcl-mk-defsystem-module-provider system::*module-provider-functions*))
+(pushnew 'mk-defsystem-module-provider system::*module-provider-functions*)
 
 
 ;;; ********************************
