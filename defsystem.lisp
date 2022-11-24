@@ -5619,10 +5619,10 @@ output to *trace-output*.  Returns the shell's exit code."
                       :output output))
 
     #+(and mkcl (not windows))
-    (nth-value 1 (mkcl:run-program shell (list "-c" command) :input nil :output output))
+    (nth-value 2 (mkcl:run-program shell (list "-c" command) :input nil :output output))
 
     #+(and mkcl windows)
-    (nth-value 1 (mkcl:run-program "cmd" (list "/c" command) :input nil :output output))
+    (nth-value 2 (mkcl:run-program "cmd" (list "/c" command) :input nil :output output))
 
     #+allegro
     (excl:run-shell-command command :input nil :output output)
