@@ -4665,7 +4665,7 @@ In these cases the name of the output file is of the form
 	  ;; CL implementations may uniformly default this to nil
 	  (let ((*load-verbose* #-common-lisp-controller t
 				#+common-lisp-controller nil) ; nil
-		#-(or MCL CMU CLISP ECL MKCL :sbcl lispworks scl)
+		#-(or MCL CMU CLISP ECL MKCL :sbcl lispworks scl clozure)
 		(*compile-file-verbose* t) ; nil
 		#+common-lisp-controller
 		(*compile-print* nil)
