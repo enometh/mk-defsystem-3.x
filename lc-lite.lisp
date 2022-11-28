@@ -25,7 +25,7 @@
 	      (and (find x *features*)
 		   (list (concatenate 'string "binary-" (string-downcase x)))))
 	    '(:allegro :lispworks :ccl :clozure :cmu :clisp
-	      :gcl :ecl :scl :mkcl ))
+	      :gcl :ecl :scl :mkcl :sbcl))
       (cerror "Continue." "Unknown implementation."))
   "List of strings denoting directory components under fasl root.")
 
