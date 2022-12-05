@@ -665,6 +665,9 @@
 ;;;
 ;;; 2022-11-24 dsm  use a single mk-defsystem-module-provider function
 ;;;                 for all lisps that provide module-provider-hooks
+;;;
+;;; 2022-12-05 dsm  clasp support. (some fixes compile time package
+;;;                 issues fixed)
 
 
 ;;;---------------------------------------------------------------------------
@@ -935,6 +938,9 @@
 ;;; as in "/user/USERID/lisp".
 ;;;
 
+;;#+clasp
+;;(in-package "CL-USER")
+
 
 ;;; ****************************************************************
 ;;; Lisp Code ******************************************************
@@ -988,6 +994,7 @@
       (and allegro-version>= (version>= 4 1))
 
       :abcl :armedbear
+      :clasp
       )
 (eval-when #-(or :lucid)
            (:compile-toplevel :load-toplevel :execute)
@@ -1108,7 +1115,7 @@
 ;;; MAKE package. A nice side-effect is that the short nickname
 ;;; MK is my initials.
 
-#+(or clisp cormanlisp ecl mkcl (and gcl defpackage) sbcl abcl)
+#+(or clisp cormanlisp ecl mkcl (and gcl defpackage) sbcl abcl clasp)
 (defpackage "MAKE" (:use "COMMON-LISP") (:nicknames "MK"))
 
 ;;; For CLtL2 compatible lisps...
@@ -1185,14 +1192,14 @@
 		    (cons "MK" nicknames))))
 )
 
-#-(or :abcl :sbcl :cltl2 :lispworks :ecl :mkcl :scl :clozure-common-lisp)
+#-(or :abcl :sbcl :cltl2 :lispworks :ecl :mkcl :scl :clozure-common-lisp :clasp)
 (in-package "MAKE" :nicknames '("MK"))
 
 #+(or :cltl2 :lispworks :scl :clozure-common-lisp)
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (in-package "MAKE"))
 
-#+(or ecl mkcl)
+#+(or ecl mkcl clasp)
 (in-package "MAKE")
 
 #+:abcl
@@ -1221,6 +1228,9 @@
 (provide 'make)
 
 #+(or :abcl :armedbear)
+(provide 'make)
+
+#+clasp
 (provide 'make)
 
 (pushnew :mk-defsystem *features*)
@@ -1360,7 +1370,10 @@
   #+mkcl t
   #+ecl t
   #+abcl t
-  #-(or abcl cmu sbcl clisp allegro :clozure-common-lisp mkcl ecl) nil
+  #+clasp t
+  #-(or abcl cmu sbcl clisp allegro :clozure-common-lisp mkcl ecl
+	clasp)
+  nil
   "If T, prevents the redefinition of REQUIRE.
 This is useful for lisps that treat REQUIRE specially in the compiler.")
 
@@ -1430,6 +1443,7 @@ on the particular lisp compiler version being used.")
     #+:allegro   (excl:current-directory)
     #+:clisp     (ext:default-directory)
     #+:sbcl      (progn *default-pathname-defaults*)
+    #+:clasp     (ext:getcwd)
     #+(or :cmu :scl)       (ext:default-directory)
     ;; *** Marco Antoniotti <marcoxa@icsi.berkeley.edu>
     ;; Somehow it is better to qualify default-directory in CMU with
@@ -1769,6 +1783,7 @@ s/^[^M]*IRIX Execution Environment 1, *[a-zA-Z]* *\\([^ ]*\\)/\\1/p\\
   #+coral     "coral"
   #+gclisp    "gclisp"
   #+(or abcl armedbear)      "abcl"
+  #+clasp     "clasp"
   )
 
 
@@ -3639,7 +3654,8 @@ binary-<lisp>/<version>_<arch>."
   #+clisp     (let ((s (lisp-implementation-version)))
                 (subseq s 0 (position #\space s)))
   #+armedbear (lisp-implementation-version)
-  #+ecl (ecl-version-string) ))
+  #+ecl (ecl-version-string)
+  #+clasp (clasp-version-string)))
   "Return a name that can be used as a directory name that is
 unique to a Lisp implementation, Lisp implementation version,
 operating system, and hardware architecture."
@@ -4692,7 +4708,7 @@ In these cases the name of the output file is of the form
                             name
                             (find-system name :load))))
 ;; ;madhu 190517 FIXME!
-	    #-(or :abcl CMU CLISP :sbcl :lispworks :cormanlisp scl MKCL ECL)
+	    #-(or :abcl CMU CLISP :sbcl :lispworks :cormanlisp scl MKCL ECL :clasp)
 	    (declare (special *compile-verbose* #-MCL *compile-file-verbose*)
 		     #-openmcl (ignore *compile-verbose*
 				       #-MCL *compile-file-verbose*)
@@ -5282,6 +5298,7 @@ In these cases the name of the output file is of the form
 	       :ecl
 	       :mkcl
 	       :abcl
+	       :clasp
 	       )
 	 'lisp:require
 	 #+(and :excl :allegro-v4.0) 'cltl1:require
@@ -5292,6 +5309,7 @@ In these cases the name of the output file is of the form
 	 #+(and :mcl (not :openmcl)) 'ccl:require
 	 #+(or :ecl :mkcl) 'cl:require
 	 #+(or :abcl :armedbear) 'cl:require
+	 #+(or :clasp) 'cl:require
 	 ))
 
   (unless *dont-redefine-require*
@@ -5304,6 +5322,7 @@ In these cases the name of the output file is of the form
                    :sbcl
                    :lispworks
                    :clozure-common-lisp
+		   :clasp
 		   :abcl) 'lisp:require
 	     #+(and :excl :allegro-v4.0) 'cltl1:require
 	     #+:lispworks3.1 'common-lisp::require
@@ -5312,6 +5331,7 @@ In these cases the name of the output file is of the form
 	     #+:openmcl 'cl:require
 	     #+(and :mcl (not :openmcl)) 'ccl:require
 	     #+(or :abcl :armedbear) 'cl:require
+	     #+(or :clasp) 'cl:require
 	     )
 	    (symbol-function 'new-require))
       #+:mkcl
@@ -5432,6 +5452,9 @@ In these cases the name of the output file is of the form
 #+abcl
 (pushnew 'mk-defsystem-module-provider system::*module-provider-functions*)
 
+#+clasp
+(pushnew 'mk-defsystem-module-provider ext:*module-provider-functions*)
+
 
 ;;; ********************************
 ;;; Language-Dependent Characteristics
@@ -5446,6 +5469,9 @@ In these cases the name of the output file is of the form
 (defun find-language (name)
   (gethash name *language-table*))
 
+;;madhu 221205 need an eval-when because of top-level calls to
+;;define-language in this file
+(eval-when (:load-toplevel :execute :compile-toplevel)
 (defstruct (language (:print-function print-language))
   name			; The name of the language (a keyword)
   compiler		; The function used to compile files in the language
@@ -5456,7 +5482,7 @@ In these cases the name of the output file is of the form
   output-files		; Function that produces a list of output
 			; files produced by the compiler, which can be
 			; cleaned up.
-)
+))
 
 (defun print-language (language stream depth)
   (declare (ignore depth))
@@ -5491,6 +5517,7 @@ In these cases the name of the output file is of the form
     (or (when language (language-binary-extension language))
 	(cdr *filename-extensions*))))
 
+(eval-when (:load-toplevel :execute :compile-toplevel)
 (defmacro define-language (name
                            &key
                            compiler
@@ -5507,7 +5534,7 @@ In these cases the name of the output file is of the form
 				     :binary-extension ,binary-extension
 				     :output-files ,output-files)))
        (setf (gethash ,name *language-table*) ,language)
-       ,name)))
+       ,name))))
 
 #||
 ;;; Test System for verifying multi-language capabilities.
@@ -5557,7 +5584,7 @@ In these cases the name of the output file is of the form
   #+:allegro (excl:run-shell-command
 	      (format nil "~A~@[ ~{~A~^ ~}~]"
 		      program arguments))
-  #+(or :kcl :ecl :mkcl) (system (format nil "~A~@[ ~{~A~^ ~}~]" program arguments))
+  #+(or :kcl :ecl :mkcl :clasp) (system (format nil "~A~@[ ~{~A~^ ~}~]" program arguments))
   #+(or :cmu :scl) (extensions:run-program program arguments)
   #+:openmcl (ccl:run-program program arguments)
   #+:sbcl (sb-ext:run-program program arguments)
@@ -5566,6 +5593,7 @@ In these cases the name of the output file is of the form
   #+clisp (#+lisp=cl ext:run-program #-lisp=cl lisp:run-program
                      program :arguments arguments)
   #+abcl (ext:run-shell-command cmd-string)
+  #+clasp (ext:run-program program arguments :wait nil)
   )
 
 #+(or symbolics (and :lispworks :harlequin-pc-lisp))
@@ -5676,12 +5704,39 @@ output to *trace-output*.  Returns the shell's exit code."
 
     #+ecl (nth-value 1 (ext:run-program shell (list "-c" command) :input nil :output output :error output))
 
+    #+clasp
+    (let (pid2 status2 code2)
+      (multiple-value-bind (stream code proc)
+	  (ext:run-program shell (list "-c" command) :input nil :output :stream :error :output :wait nil)
+	(when proc
+	  (handler-case
+	      (multiple-value-setq (status2 code2 pid2)
+		(si:waitpid (ext:external-process-pid proc) t))
+	    ;; ;madhu 230111 ext:;external-process-wait always throws
+	    ;; an exception in clasp-2.0, but si:waitpid seems to work
+	    (ext:segmentation-violation (e)
+	      (warn "Handling ~S during external-process-wait on pid ~A"
+		    e
+		    (ext:external-process-pid proc))))
+	  (when stream
+	    (unwind-protect
+		 (progn (loop for line = (read-line stream nil) while line
+			      do (write-line line output))
+			code2)
+	      (ignore-errors (close stream)))))))
+
     #+abcl (ext:run-shell-command command) ; Just a place holder FTTB.
 
-    #-(or ecl openmcl clisp lispworks allegro mkcl scl cmu sbcl)
+    #-(or ecl openmcl clisp lispworks allegro mkcl scl cmu sbcl clasp)
     (error "RUN-SHELL-PROGRAM not implemented for this Lisp")
     ))
 
+#||
+(with-output-to-string (stream)
+  (run-shell-command "ls /dev/shm/" nil :output stream))
+(with-output-to-string (*standard-output*)
+  (run-shell-command "ls /dev/shm/" nil :output *standard-output*))
+||#
 
 #||
 (defun c-compile-file (filename &rest args &key output-file error-file)
