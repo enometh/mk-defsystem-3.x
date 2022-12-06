@@ -668,6 +668,9 @@
 ;;;
 ;;; 2022-12-05 dsm  clasp support. (some fixes compile time package
 ;;;                 issues fixed)
+;;;
+;;; 2022-12-05 dsm  make sure *dont-redefine-require* nil is honoured
+;;;                 at runtime (for clasp)
 
 
 ;;;---------------------------------------------------------------------------
@@ -5287,7 +5290,7 @@ In these cases the name of the output file is of the form
 ;;; Redefine old require to call the new require.
 (eval-when #-(or :lucid) (:load-toplevel :execute)
 	   #+(or :lucid) (load eval)
-(unless *old-require*
+ (unless *old-require*
   (setf *old-require*
 	(symbol-function
 	 #-(or (and :excl :allegro-v4.0)
@@ -5310,7 +5313,7 @@ In these cases the name of the output file is of the form
 	 #+(or :ecl :mkcl) 'cl:require
 	 #+(or :abcl :armedbear) 'cl:require
 	 #+(or :clasp) 'cl:require
-	 ))
+	 )))
 
   (unless *dont-redefine-require*
     (let (#+(or :mcl (and :CCL (not :lispworks)))
@@ -5365,7 +5368,7 @@ In these cases the name of the output file is of the form
 		   (symbol-function 'new-require))
 	     (ext:package-lock "CL" t))
  ;;;madhu 190518 FIXME MKCL package-locks
-      ))))
+      )))
 
 
 ;;; Well, let's add some more REQUIRE hacking; specifically for SBCL,
