@@ -671,6 +671,9 @@
 ;;;
 ;;; 2022-12-05 dsm  make sure *dont-redefine-require* nil is honoured
 ;;;                 at runtime (for clasp)
+;;;
+;;; 2022-12-11 dsm  try to fix run-shell-command on allegro
+;;;
 
 
 ;;;---------------------------------------------------------------------------
@@ -5656,8 +5659,30 @@ output to *trace-output*.  Returns the shell's exit code."
     (nth-value 2 (mkcl:run-program "cmd" (list "/c" command) :input nil :output output))
 
     #+allegro
-    (excl:run-shell-command command :input nil :output output)
-    
+    (let (process-output ignored process-pid
+			 exit-code ignored pid signal)
+      (declare (ignorable ignored pid signal))
+      (if (and (streamp output)  (excl.osi::stream-to-fd output))
+	  (multiple-value-setq (exit-code)
+	    (excl:run-shell-command command :input nil
+				    :output output
+				    :error-output :output
+				    :wait t))
+	  (unwind-protect
+	       (progn
+		 (multiple-value-setq (process-output ignored process-pid)
+		   (excl:run-shell-command command :input nil
+					   :output :stream
+					   :error-output :output
+					   :wait nil))
+		 (when process-pid
+		   (multiple-value-setq (exit-code pid signal)
+		     (sys:reap-os-subprocess :pid process-pid :wait t))
+		   (loop for line = (read-line process-output nil)
+			 while line do (write-line line output)))
+		 exit-code)
+	    (when process-output (ignore-errors (close process-output))))))
+
     #+(and lispworks win32)
     (system:call-system-showing-output (format nil "cmd /c ~A" command)
 				       :show-cmd nil :prefix ""
