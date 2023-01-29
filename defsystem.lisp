@@ -674,6 +674,8 @@
 ;;;
 ;;; 2022-12-11 dsm  try to fix run-shell-command on allegro
 ;;;
+;;; 2023-01-29 dsm  give specialized language loaders a chance to work
+;;;                 without the stated source file present
 
 
 ;;;---------------------------------------------------------------------------
@@ -6053,7 +6055,7 @@ output to *trace-output*.  Returns the shell's exit code."
 
 (defun compile-file-operation--internal (component force)
   ;; Returns T if the file had to be compiled.
-  (let ((must-compile
+  (let* ((must-compile
 	 ;; For files which are :load-only T, loading the file
 	 ;; satisfies the demand to recompile.
 	 (and (null (component-load-only component)) ; not load-only
@@ -6061,9 +6063,11 @@ output to *trace-output*.  Returns the shell's exit code."
 		  (and (find force '(:new-source :new-source-and-dependents)
 			     :test #'eq)
 		       (needs-compilation component nil)))))
-	(source-pname (component-full-pathname component :source)))
+	(source-pname (component-full-pathname component :source))
+	(source-exists (probe-file source-pname)))
 
-    (cond ((and must-compile (probe-file source-pname))
+    (cond ((or (and (not source-exists) (component-language component) t) ;madhu 230129
+	       (and must-compile source-exists))
 	   (with-tell-user ("Compiling source" component :source)
 	     (let ((output-file
 		    #+:lucid
@@ -6251,7 +6255,8 @@ or does not contain valid compiled code."
 	 ;; needs-compilation has an implicit source-exists in it.
 	 (needs-compilation (if (component-load-only component)
 				source-needs-loading
-				(needs-compilation component force)))
+				(or (and (not source-exists) (component-language component) t) ;madhu 230129
+				    (needs-compilation component force))))
 	 (check-for-new-source
 	  ;; If force is :new-source*, we're checking for files
 	  ;; whose source is newer than the compiled versions.
