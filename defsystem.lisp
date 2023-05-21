@@ -676,6 +676,9 @@
 ;;;
 ;;; 2023-01-29 dsm  give specialized language loaders a chance to work
 ;;;                 without the stated source file present
+;;;
+;;; 2023-05-21 dsm  package-inferred-hack: handle pathname-complications where
+;;;                 a :pathname argument is specified in asd form
 
 
 ;;;---------------------------------------------------------------------------
@@ -7139,8 +7142,16 @@ otherwise return a default system name computed from PACKAGE-NAME."
   (with-open-file (f file)
     (stream-asd-form f)))
 
-(defun extract-subdirs (asd-definition-path prefix)
-  (let* ((enough-namestring (enough-namestring asd-definition-path prefix))
+(defun extract-subdirs (asd-definition-path prefix &optional pathname-complication)
+  ;; ;madhu 230521 asd form specifies a :pathname. Assume it is a
+  ;; string terminated with /, denoting a subdir where the sources
+  ;; are found, and that merge-pathnames can handle
+  ;;;correctly. i.e. (merge-pathnames "foo/src/" "/a/b/c/c.asd") =
+  ;; ;#P"/a/b/c/foo/src/c.asd"
+  (let* ((enough-namestring (enough-namestring (if pathname-complication
+						   (merge-pathnames pathname-complication asd-definition-path)
+						   asd-definition-path)
+					       prefix))
 	 (dir (pathname-directory enough-namestring)))
     (when dir
       (assert (eq (car dir) :relative))
@@ -7158,6 +7169,7 @@ otherwise return a default system name computed from PACKAGE-NAME."
 (defun make-mk-form (asd-form subdirs asd-path)
   (let* ((depends-on (getf asd-form :depends-on))
 	 (components (getf asd-form :components))
+	 (pathname-complication (getf asd-form :pathname))
 	 (package-inferred-p
 	  (eq (getf asd-form :class) :package-inferred-system)))
     ;; apparently some users just stick in a :class
@@ -7170,7 +7182,10 @@ otherwise return a default system name computed from PACKAGE-NAME."
 	      for pkg-path =
 	      (package-inferred-hack-get-pathname-on-disk
 	       dep prefix
-	       (directory-namestring asd-path))
+	       (directory-namestring
+		(if pathname-complication
+		    (merge-pathnames pathname-complication asd-path)
+		    asd-path)))
 	      do
 	(assert pkg-path nil "Could not infer the path to the package file")
 	(multiple-value-bind (ret1 ignored-deps1)
@@ -7222,7 +7237,9 @@ otherwise return a default system name computed from PACKAGE-NAME."
 	 (binary-dir (format nil "*~(~A~)-binary-dir*" name))
 	 (forms (sort (loop for f in asd-file-list
 			    for asd-form = (file-asd-form f)
-			    for subdirs = (extract-subdirs f (translate-logical-pathname root-dir))
+			    for pathname-complication = (getf asd-form :pathname)
+			    for subdirs = (extract-subdirs f (translate-logical-pathname root-dir)
+							   pathname-complication)
 			    for mk-form = (with-simple-restart (skip "Skip")
 					    (make-mk-form asd-form subdirs f))
 			    when mk-form collect it)
