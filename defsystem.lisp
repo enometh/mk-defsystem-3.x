@@ -6882,6 +6882,7 @@ otherwise return a default system name computed from PACKAGE-NAME."
 
 (defun package-inferred-prefixp (prefix pkg-spec &aux idx)
   "Return the suffix"
+  (unless (stringp pkg-spec) (setq pkg-spec (string-downcase pkg-spec)))
   (when (or (null (setq idx (mismatch prefix pkg-spec :test #'equalp)))
 	    (>= idx (length prefix)))
     (subseq pkg-spec (length prefix))))
@@ -7187,7 +7188,10 @@ otherwise return a default system name computed from PACKAGE-NAME."
 		    (merge-pathnames pathname-complication asd-path)
 		    asd-path)))
 	      do
-	(assert pkg-path nil "Could not infer the path to the package file")
+;;	(assert pkg-path nil "Could not infer the path to the package file")
+	(if (null pkg-path)
+	    (progn (format t "MAKE-MK-FORM:: Could not infer the path to the package file for ~S." dep)
+		   #+nil(pushnew (string dep) new-depends-on :))
 	(multiple-value-bind (ret1 ignored-deps1)
 	    (package-inferred-hack-generate-file-list pkg-path prefix)
 	  (setq new-depends-on (append new-depends-on ignored-deps1))
@@ -7195,7 +7199,7 @@ otherwise return a default system name computed from PACKAGE-NAME."
 				       ret1
 				       `((:file ,(package-inferred-prefixp
 						  prefix
-						  dep)))))))
+						  dep))))))))
 	(if new-depends-on (setq depends-on new-depends-on))
 	(if new-components (setq components new-components))))
     `(defsystem ,(second asd-form)
