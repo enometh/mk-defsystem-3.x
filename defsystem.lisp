@@ -3372,8 +3372,8 @@ used with caution.")
 			       (assert (endp (cdddr dep-spec)))
 			       (warn "mk-defsystem: dependency-spec: Ignoring asdf misfeature ~S. Use ~S directly."
 				     `(:version ,(cdr dep-spec))
-				     (third dep-spec))
-			       (resolve-dependency-spec (third dep-spec)))
+				     (second dep-spec))
+			       (resolve-dependency-spec (second dep-spec)))
 			      (t
 			       (assert (eql (car dep-spec) :feature))
 			       (assert (endp (cdddr dep-spec)))
