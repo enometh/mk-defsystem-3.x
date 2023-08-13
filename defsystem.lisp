@@ -6815,7 +6815,7 @@ nil)
 ;; Is a given form recognizable as a defpackage form?
 (defun defpackage-form-p (form)
   (and (consp form)
-       (member (car form) *defpackage-forms*)))
+       (member (car form) *defpackage-forms* :test #'string=)))
 
 ;; Find the first defpackage form in a stream, if any
 (defun stream-defpackage-form (stream)
