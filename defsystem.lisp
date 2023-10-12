@@ -679,6 +679,15 @@
 ;;;
 ;;; 2023-05-21 dsm  package-inferred-hack: handle pathname-complications where
 ;;;                 a :pathname argument is specified in asd form
+;;;
+;;; 2023-10-12 dsm  add a :no-lib-prefix boolean keyword argument to
+;;;                 mk::mklib to skip prefixing "lib" to the name of
+;;;                 the target (.so or .a) library file. so we have to
+;;;                 retard add a :no-library-suffix to be able to
+;;;                 produce files compatibile with make-build.  add
+;;;                 :override to bypass the whole file name production
+;;;                 logic altogether
+;;;
 
 
 ;;;---------------------------------------------------------------------------
@@ -4381,18 +4390,20 @@ For MKCL supply :FASL-P NIL to MKCL's COMPILE-FILE
 (defun ecl-munge-o (pathname)
   (make-pathname :type "o" :defaults pathname))
 
-(defun %concated-fasl-pathname (system &key (defaults *default-pathname-defaults*) #+(or ecl mkcl) (ecl-build-type :fasl))
+(defun %concated-fasl-pathname (system &key (defaults *default-pathname-defaults*) #+(or ecl mkcl) (ecl-build-type :fasl) no-lib-prefix no-library-suffix)
   (make-pathname
    :name (concatenate 'string
 		      #+(or ecl mkcl)
 		      (case ecl-build-type
-			((:shared-library :static-library) "lib")
+			((:shared-library :static-library)
+			 (if no-lib-prefix "" "lib"))
 			(otherwise ""))
                       (MK::COMPONENT-NAME system)
 		      (or #+(or ecl mkcl)
 			  (when (eq ecl-build-type :exe)
 			    "")
-			  *concated-fasl-suffix*))
+			  (if no-library-suffix ""
+			      *concated-fasl-suffix*)))
    :type (or #+(or ecl mkcl)
 	     (ecase ecl-build-type
 	       ((nil :fasl) "fas")
@@ -4481,6 +4492,7 @@ For MKCL supply :FASL-P NIL to MKCL's COMPILE-FILE
 ;madhu 190516
 ;;(user::package-add-nicknames "COMPILER" "C")
 (defun mklib (system &key (defaults *default-pathname-defaults*)
+	      no-lib-prefix no-library-suffix override
 	      (recursively-handle-deps t)
 	      #+(or ecl mkcl) (ecl-build-type :fasl)
 	      #+(or ecl mkcl) init-function-name
@@ -4499,11 +4511,24 @@ dashes in the system name to underscores.
 
 In these cases the name of the output file is of the form
 \"LIB<SYSTEM>-LIBRARY.{so,a}\".
+
+Use :NO-LIB-PREFIX T to skip produce a plain
+\"<SYSTEM>-library.{so,a}\"
+
+Use :NO-LIBRARY-SUFFIX to skip appending *concated-fasl-suffix* to
+the basename of the target file.
+
+Use :OVERRIDE <TARGET PATHNAME> to skip all these shennanigans and
+just write to the given pathname.
 "
   (let* ((system (ensure-system system))
-	   (pathname (%concated-fasl-pathname
-		      system :defaults defaults
-		      #+(or ecl mkcl) :ecl-build-type #+(or ecl mkcl) ecl-build-type))
+	   (pathname (or override
+			 (%concated-fasl-pathname
+			  system :defaults defaults
+			  :no-lib-prefix no-lib-prefix
+			  :no-library-suffix no-library-suffix
+			  #+(or ecl mkcl) :ecl-build-type
+			  #+(or ecl mkcl) ecl-build-type)))
 	   #-(or lispworks ecl mkcl)
 	   (buf (make-array 2048 :element-type '(unsigned-byte 8)))
 	 (fasls (concated-fasl-list system :recursively-handle-deps recursively-handle-deps)))
