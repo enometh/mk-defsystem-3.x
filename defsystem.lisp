@@ -1212,14 +1212,14 @@
 		    (cons "MK" nicknames))))
 )
 
-#-(or :abcl :sbcl :cltl2 :lispworks :ecl :mkcl :scl :clozure-common-lisp :clasp)
+#-(or :abcl :sbcl :cltl2 :lispworks :ecl :mkcl :scl :clozure-common-lisp :clasp cmu)
 (in-package "MAKE" :nicknames '("MK"))
 
 #+(or :cltl2 :lispworks :scl :clozure-common-lisp)
 (eval-when (:compile-toplevel :load-toplevel :execute)
   (in-package "MAKE"))
 
-#+(or ecl mkcl clasp)
+#+(or ecl mkcl clasp cmu)
 (in-package "MAKE")
 
 #+:abcl
