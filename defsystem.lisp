@@ -7236,7 +7236,7 @@ otherwise return a default system name computed from PACKAGE-NAME."
 (defun get-asd-file-list (dir)
   (mk::split-string
    (with-output-to-string (stream)
-     (let ((ret (mk::run-shell-command "IFS=$'\n'; find ~S -name '*.asd' -type f" (list (namestring (translate-logical-pathname dir)))
+     (let ((ret (mk::run-shell-command "LANG=C IFS=$'\n'; find ~S -name '*.asd' -type f" (list (namestring (translate-logical-pathname dir)))
 				   :output stream)))
        (assert (zerop ret) nil "Error running program: ~A" (get-output-stream-string stream))))
    :item #\Newline))
