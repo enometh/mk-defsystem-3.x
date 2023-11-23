@@ -688,6 +688,8 @@
 ;;;                 :override to bypass the whole file name production
 ;;;                 logic altogether
 ;;;
+;;; 2023-11-22 dsm  package-inferred-hack: handle all defsystem forms
+;;;                 in asd file.
 
 
 ;;;---------------------------------------------------------------------------
@@ -7160,6 +7162,7 @@ otherwise return a default system name computed from PACKAGE-NAME."
 
 ;; Find the first defsystem form in a stream, if any
 (defun stream-asd-form (stream)
+  ;;madhu 231123 FIXME: a NIL form scuttle the READ
   (loop :for form = (read stream nil nil) :while form
         :when (asd-form-p form) :return form))
 
@@ -7167,6 +7170,14 @@ otherwise return a default system name computed from PACKAGE-NAME."
   "Return the first DEFSYSTEM form in FILE."
   (with-open-file (f file)
     (stream-asd-form f)))
+
+;madhu 231123
+(defun file-asd-forms (file)
+  "Retrun the DEFSYSTEM forms in FILE."
+  (with-open-file (stream file)
+    (loop :for form = (read stream nil 'eof) :while (not (eql form 'eof))
+          :when (asd-form-p form) :collect form)))
+
 
 (defun extract-subdirs (asd-definition-path prefix &optional pathname-complication)
   ;; ;madhu 230521 asd form specifies a :pathname. Assume it is a
@@ -7265,13 +7276,13 @@ otherwise return a default system name computed from PACKAGE-NAME."
   (let* ((source-dir (format nil "*~(~A~)-source-dir*" name))
 	 (binary-dir (format nil "*~(~A~)-binary-dir*" name))
 	 (forms (sort (loop for f in asd-file-list
-			    for asd-form = (file-asd-form f)
+	    append   (loop  for asd-form in (file-asd-forms f)
 			    for pathname-complication = (getf asd-form :pathname)
 			    for subdirs = (extract-subdirs f (translate-logical-pathname root-dir)
 							   pathname-complication)
 			    for mk-form = (with-simple-restart (skip "Skip")
 					    (make-mk-form asd-form subdirs f))
-			    when mk-form collect it)
+			    when mk-form collect it))
 		      #'compare-system-names
 		      :key #'second)))
     (with-open-file (stream target-file :direction :output
