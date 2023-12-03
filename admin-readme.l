@@ -101,7 +101,9 @@ rsync -i -avzH --inplace -OJX --files-from=/tmp/1 / ./
 
 (defun dump-link-for (line &optional stream)
   "returns a string if stream is NIL"
-  (format stream "[[~A][~A]]" (strip-prefix line) line))
+  #+nil
+  (format stream "- [[file:~A][~A]]" (strip-prefix line) line)
+  (format stream "- [[file:~A]]" (strip-prefix line)))
 
 #+nil
 (dump-link-for (elt $file-paths 0))
