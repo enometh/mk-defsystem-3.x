@@ -107,7 +107,7 @@ rsync -i -avzH --inplace -OJX --files-from=/tmp/1 / ./
 (dump-link-for (elt $file-paths 0))
 
 #+nil
-(dump-lines (map 'vector 'dump-link-for $file-paths) "/dev/shm/2")
+(dump-lines (map 'vector 'dump-link-for $file-paths) "/tmp/manifest.org")
 
 ;;;
 ;;;
@@ -155,5 +155,5 @@ git log -1 --no-decorate --pretty=fuller -- {{rel-path}} |head -5|egrep -v '^(Au
   (map nil (lambda (file-path)
 	     (format stream "* ~A~&" (strip-prefix file-path))
 	     (write-lines-to-stream (get-last-commit-info file-path) stream)
-	     (terpri stream) (terpri stream))
+	     (terpri stream))
        $file-paths))
