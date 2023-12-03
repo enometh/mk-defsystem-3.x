@@ -34,14 +34,29 @@
 	   (concatenate 'string
 			(namestring (probe-file (user-homedir-pathname)))
 			(subseq path 2)))
+      (and (equal path "~") (namestring (user-homedir-pathname)))
       path))
 
+(defun split-on-prefix (line prefixes &key (sanitize-line-p t)
+			(sanitize-prefix-p t))
+  "Search for a prefix of LINE from among PREFIXES. return as values the
+first prefix which matches, and the suffix of the line (stripped off
+the prefix."
+  (loop with sanitized-line = (if sanitize-line-p
+				  (sanitize-tilde-in-pathname line)
+				  line)
+	for prefix in prefixes
+	for sanitized-prefix = (if sanitize-prefix-p
+				    (sanitize-tilde-in-pathname prefix)
+				    prefix)
+;;	do (debug "=> " prefix sanitized-prefix line sanitized-line #\Newline)
+	if (prefixp sanitized-prefix sanitized-line)
+	return (values prefix
+		       (subseq sanitized-line (length sanitized-prefix)))))
+
 (defun strip-prefix (line)
-  "whichever matches first"
-  (let ((line (sanitize-tilde-in-pathname line)))
-    (loop for prefix in (mapcar 'sanitize-tilde-in-pathname $prefixes)
-	  if (prefixp prefix line)
-	  return (subseq line (length prefix)))))
+  "whichever matches first. USES $PREFIXES"
+  (nth-value 1 (split-on-prefix line $prefixes))
 
 #+nil
 (map 'list #'strip-prefix $file-paths)
@@ -93,3 +108,52 @@ rsync -i -avzH --inplace -OJX --files-from=/tmp/1 / ./
 
 #+nil
 (dump-lines (map 'vector 'dump-link-for $file-paths) "/dev/shm/2")
+
+;;;
+;;;
+;;;
+(defun split-on-first-dir (file-path prefixes  &rest key-args &key &allow-other-keys)
+  "First calls SPLIT-ON-PREFIX on FILE-PATH. The first dir is
+the first component of the returned suffix.  Returns as values the
+prefixed-path to the first dir, and the file path."
+  (multiple-value-bind (prefix suffix)
+      (apply #'split-on-prefix file-path prefixes key-args)
+    (let ((p (position #\/  suffix)))
+      (values (user::join-namestrings prefix (subseq suffix 0 p))
+	      (subseq suffix (1+ p))))))
+
+#+nil
+(split-on-first-dir "~/cl/extern/clx-portable/clx-portable.system"
+		    $prefixes)
+
+#+nil
+(progn
+(require 'mustache "~/cl/mustache.lisp")
+(import 'mustache::mustache )
+
+(defun get-last-commit-info (file-path)
+  (multiple-value-bind (first-dir rel-path)
+      (split-on-first-dir file-path $prefixes)
+    (in-directory (sanitize-tilde-in-pathname first-dir)
+      (with-open-pipe (stream
+		       (mustache
+"echo -n 'Branch: ';
+git branch --show-current;
+echo -n 'Remote: ';
+git config --get remote.origin.url;
+echo -n 'Modified: ';
+date -r {{rel-path}}
+git log -1 --no-decorate --pretty=fuller -- {{rel-path}} |head -5|egrep -v '^(Author|Commit):'"))
+	(read-lines-from-stream stream)
+	#+nil
+	(slurp-stream stream nil :element-type 'character)))))
+
+#+nil
+(with-open-file (stream "/tmp/COMMIT_MESSAGE" :direction :output
+			:if-does-not-exist :create
+			:if-exists :supersede)
+  (map nil (lambda (file-path)
+	     (format stream "* ~A~&" (strip-prefix file-path))
+	     (write-lines-to-stream (get-last-commit-info file-path) stream)
+	     (terpri stream) (terpri stream))
+       $file-paths))
