@@ -1,1 +1,11 @@
-* My Collection of mk:define-language mk-defsystem hooks
+* My collection of mk:define-language defsystem hooks
+
+A current snapshot of my local files for various packages that extend
+defsystem functionality through the ~make:define-language~ mechanism.
+
+- [[file:cl-protobufs/mk-defsystem-protobufs-hooks.lisp]]
+- [[file:eco/src/eco-mk-defsystem-hooks.lisp]]
+- [[file:magicl/mk-defsystem-magicl-expokit-hooks.lisp]]
+- [[file:cffi/grovel/mkdefsystem-hooks.lisp]]
+- [[file:cffi/src/c2ffi/mk-defsystem-c2ffi-hooks.lisp]]
+- [[file:claw-cxx/src/util/mk-defsystem-hooks.lisp]]
