@@ -7089,12 +7089,18 @@ otherwise return a default system name computed from PACKAGE-NAME."
 #+nil
 (format-mk-plist '(:file "a" :depends-on ("b" "c")) *standard-output*)
 
-(defun format-mk-name (name stream)
+(defun format-mk-name (name stream &key non-bare)
   (check-type name (or keyword symbol string))
   (cond ((and (symbolp name)
-	      (not (symbol-package name)))
+	      (or (not (symbol-package name))
+		  (and (not (keywordp name))
+		       non-bare)))
 	 (format stream ":~(~A~)" name))
 	(t (format stream "~(~S~)" name))))
+
+#+nil
+(with-output-to-string (*standard-output*)
+  (mk::format-mk-name 'foo *standard-output* :non-bare t))
 
 (defun format-mk-depends-on-list (list stream &key (indent 0))
   (format stream "(")
@@ -7307,7 +7313,7 @@ otherwise return a default system name computed from PACKAGE-NAME."
 		    (unless skip-source-p `(:source-dir ,source-dir))
 		    (unless skip-binary-p `(:binary-dir ,binary-dir))))
 	    (format stream "~%~%#+nil~%(mk:oos ")
-	    (format-mk-name (second form) stream)
+	    (format-mk-name (second form) stream :non-bare t)
 	    (format stream " :load :compile-during-load t)~%~%")))))
 
 
