@@ -262,3 +262,22 @@ translations for HOST."
 (wildset-lpn-translations "PROJECTS" "~/cl/" :wipe nil :dry-run t)
 
 (export 'wildset-lpn-translations))
+
+
+(defun sanitize-tilde-in-pathname (pathname)
+  "Replace a ~ at the start of string PATHNAME with the user's home
+directory."
+  (let* ((path (if (stringp pathname) pathname (namestring pathname)))
+	 (rep (and path (> (length path) 1)
+		   (eql (elt path 0) #\~)
+		   (eql (elt path 1) #\/)
+		   (subseq path 2))))
+    (cond (rep (let ((home (identity #+nil probe-file (user-homedir-pathname))))
+		 (if (pathnamep pathname)
+		     (merge-pathnames rep home)
+		   (concatenate 'string
+				(namestring home)
+				rep))))
+	  (t pathname))))
+
+(export 'sanitize-tilde-in-pathname)
