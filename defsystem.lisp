@@ -7219,9 +7219,11 @@ otherwise return a default system name computed from PACKAGE-NAME."
 	 (components (getf asd-form :components))
 	 (pathname-complication (getf asd-form :pathname))
 	 (package-inferred-p
-	  (or (equalp (string (getf asd-form :class))
-		      (string :package-inferred-system))
-	      )))
+	  (let ((p (string (getf asd-form :class))))
+	    (or (eq p :package-inferred-system)
+		(equalp (string p) (string :package-inferred-system))
+		;;madhu 231228 handle arbitrary strings?
+		#+nil p))))
     ;; apparently some users just stick in a :class
     ;; :package-inferred-system without really meaning it
     (when (and package-inferred-p (not components))
