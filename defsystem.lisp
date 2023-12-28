@@ -7326,6 +7326,7 @@ otherwise return a default system name computed from PACKAGE-NAME."
    "TEST-SYSTEM" "PROGRAM-OP"
    "INITIALIZE-SOURCE-REGISTRY"
    "OOS"
+   "PACKAGE-INFERRED-SYSTEM"
    "REGISTER-SYSTEM-PACKAGES"))
 )
 
