@@ -6910,9 +6910,14 @@ otherwise return a default system name computed from PACKAGE-NAME."
 (defun package-inferred-prefixp (prefix pkg-spec &aux idx)
   "Return the suffix"
   (unless (stringp pkg-spec) (setq pkg-spec (string-downcase pkg-spec)))
-  (when (or (null (setq idx (mismatch prefix pkg-spec :test #'equalp)))
-	    (>= idx (length prefix)))
-    (subseq pkg-spec (length prefix))))
+  (cond ((or (null (setq idx (mismatch prefix pkg-spec :test #'equalp)))
+	     (>= idx (length prefix)))
+	 (subseq pkg-spec (length prefix)))
+	;; ;madhu 231228 - handle uses of the demenented package
+	;; naming system: "d.lisp" defines a package "a.b.c/d" which
+	;; uses package "a.b.c/e" defined in e.lisp.
+	((and (> idx 0) (eql (elt pkg-spec idx) #\/))
+	 (subseq pkg-spec (1+ idx)))))
 
 (defun package-inferred-hack-get-pathname-on-disk (pkg-spec prefix dir)
   ;;(assert (cl-user::prefixp  prefix pkg-spec) nil "~A" (list pkg-spec prefix dir))
@@ -7027,7 +7032,8 @@ otherwise return a default system name computed from PACKAGE-NAME."
 			(push (frob-plist-serial val) ret))
 		       ((eql x :file)
 			(push (frob-plist-path val) ret))
-		       ((member x '(:doc-file :static-file)) nil))))))
+		       ((member x '(:doc-file :static-file)) nil)
+		       (t (error "FIXME")))))))
     (nreverse ret)))
 
 #+nil
@@ -7214,7 +7220,11 @@ otherwise return a default system name computed from PACKAGE-NAME."
 	 (components (getf asd-form :components))
 	 (pathname-complication (getf asd-form :pathname))
 	 (package-inferred-p
-	  (eq (getf asd-form :class) :package-inferred-system)))
+	  (let ((p (string (getf asd-form :class))))
+	    (or (eq p :package-inferred-system)
+		(equalp (string p) (string :package-inferred-system))
+		;;madhu 231228 handle arbitrary strings?
+		#+nil p))))
     ;; apparently some users just stick in a :class
     ;; :package-inferred-system without really meaning it
     (when (and package-inferred-p (not components))
@@ -7232,8 +7242,8 @@ otherwise return a default system name computed from PACKAGE-NAME."
 	      do
 ;;	(assert pkg-path nil "Could not infer the path to the package file")
 	(if (null pkg-path)
-	    (progn (format t "MAKE-MK-FORM:: Could not infer the path to the package file for ~S." dep)
-		   #+nil(pushnew (string dep) new-depends-on :))
+	    (progn (format t "MAKE-MK-FORM:: Could not infer the path to the package file for ~S.~&" dep)
+		   #+nil(pushnew (string dep) new-depends-on))
 	(multiple-value-bind (ret1 ignored-deps1)
 	    (package-inferred-hack-generate-file-list pkg-path prefix)
 	  (setq new-depends-on (append new-depends-on ignored-deps1))
