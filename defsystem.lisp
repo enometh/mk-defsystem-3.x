@@ -7108,15 +7108,55 @@ otherwise return a default system name computed from PACKAGE-NAME."
 (with-output-to-string (*standard-output*)
   (mk::format-mk-name 'foo *standard-output* :non-bare t))
 
+(defun format-mk-feature-expression (exp stream &key (indent 0))
+  (etypecase exp
+    (keyword (format stream "~(~S~)" exp))
+    (cons (ecase (car exp)
+	    ((:and :or :not)
+	     (format stream "(~(~S~) " (car exp))
+	     (loop for x on (cdr exp) for sub = (car x) do
+		   (format-mk-feature-expression sub stream
+						 :indent (+ indent 1))
+		   (when (cdr x)
+		     (terpri stream)
+		     (write-indent (+ indent 1) stream)))
+	     (format stream ")"))))))
+
+#+nil
+(with-output-to-string (stream)
+  (format-mk-feature-expression '(:and (:or :sbcl :ecl :clasp)
+				  (:not :usocket-iolib))
+				stream))
+
+
 (defun format-mk-depends-on-list (list stream &key (indent 0))
   (format stream "(")
   (loop for x on list for item = (car x)
 	do
-	(when (consp item)
-	  (assert (eql (car item) :version))
-	  (warn "ignoring version depends-on ~S" item)
-	  (setq item (second item)))
-	(format-mk-name item stream)
+	(cond ((consp item)
+	       (ecase (car item)
+		 (:version
+		  (warn "ignoring version depends-on ~S" item)
+		  (format-mk-name (second item) stream))
+		 (:feature
+		  (format stream "(:feature ")
+		  (format-mk-feature-expression (second item) stream
+						:indent (+ indent 2))
+		  (cond ((consp (second item))
+			 (terpri stream)
+			 (write-indent (+ indent 2) stream))
+			(t (format stream " ")))
+		  ;; the grammar for :feature dependency-def seems to
+		  ;; be wrong. it is specified as ( :feature
+		  ;; feature-expression dependency-def ) but it should
+		  ;; be ( :feature feature-expression
+		  ;; simple-component-name ). using the latter form
+		  ;; here.
+		  (if (consp (third item))
+		      (warn "FORMAT-DEPENDS-ON: SKIPPING FORM ~S" item)
+		      (format-mk-name (third item) stream))
+		  (format stream ")"))))
+	      (t (format-mk-name item stream)))
 	(when (cdr x)
 	  (terpri stream)
 	  (write-indent (+ indent 1) stream)))
@@ -7124,6 +7164,16 @@ otherwise return a default system name computed from PACKAGE-NAME."
 
 #+nil
 (format-mk-depends-on-list '("y" "z") *standard-output* :indent 0)
+
+#+nil
+(with-output-to-string (*standard-output*)
+  (format-mk-depends-on-list '(:split-sequence
+			       (:feature (:and (:or :sbcl :ecl :clasp)
+					  (:not :usocket-iolib))
+				:sb-bsd-sockets)
+			       (:feature :usocket-iolib
+				:iolib))
+			     *standard-output* :indent 0))
 
 (defun format-mk-components-list (list stream &key (indent 0))
   (format stream "(")
