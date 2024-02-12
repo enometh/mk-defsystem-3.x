@@ -7151,7 +7151,9 @@ otherwise return a default system name computed from PACKAGE-NAME."
 		  ;; be ( :feature feature-expression
 		  ;; simple-component-name ). using the latter form
 		  ;; here.
-		  (format-mk-name (third item) stream)
+		  (if (consp (third item))
+		      (warn "FORMAT-DEPENDS-ON: SKIPPING FORM ~S" item)
+		      (format-mk-name (third item) stream))
 		  (format stream ")"))))
 	      (t (format-mk-name item stream)))
 	(when (cdr x)
