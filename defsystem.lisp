@@ -6893,15 +6893,21 @@ the DEFPACKAGE-FORM uses it or imports a symbol from it."
     (dolist (p (if (and packages (atom packages)) (list packages) packages))
       (setf (gethash (package-designator-name p) *package-inferred-systems*) name))))
 
-(defun package-name-system (package-name)
+(defvar *asd-hack-system-name* nil
+  "Name of the system which is being generated/")
+
+(defun package-name-system (package-name &optional (system *asd-hack-system-name*))
   "Return the name of the SYSTEM providing PACKAGE-NAME, if such exists,
 otherwise return a default system name computed from PACKAGE-NAME."
   (check-type package-name string)
-  (or (gethash package-name *package-inferred-systems*)
+  (or (let ((name (gethash package-name *package-inferred-systems*)))
+	(if (equalp system name)
+	    nil
+	    name))
       (string-downcase package-name)))
 
 ;; Given a file in package-inferred-system style, find its dependencies
-(defun package-inferred-system-file-dependencies (file &optional system)
+(defun package-inferred-system-file-dependencies (file &optional (system *asd-hack-system-name*))
   (let ((defpackage-form (file-defpackage-form file)))
   (if defpackage-form
     (remove t (mapcar 'package-name-system (package-dependencies defpackage-form)))
@@ -7338,7 +7344,8 @@ otherwise return a default system name computed from PACKAGE-NAME."
 				     (skip-binary-p skip-source-p)
 				     (if-exists :supersede)
 				     root-dir-form)
-  (let* ((source-dir (format nil "*~(~A~)-source-dir*" name))
+  (let* ((*asd-hack-system-name* name)
+	  (source-dir (format nil "*~(~A~)-source-dir*" name))
 	 (binary-dir (format nil "*~(~A~)-binary-dir*" name))
 	 (forms (sort (loop for f in asd-file-list
 	    append   (loop  for asd-form in (file-asd-forms f)
