@@ -690,6 +690,11 @@
 ;;;
 ;;; 2023-11-22 dsm  package-inferred-hack: handle all defsystem forms
 ;;;                 in asd file.
+;;;
+;;; 2024-03-24 dsm  component-full-pathname-i: try to return the
+;;;                 directory if the component is a module. the
+;;;                 string-concat hack is not likely to work.
+
 
 
 ;;;---------------------------------------------------------------------------
@@ -3165,7 +3170,17 @@ used with caution.")
 	      version-dir
 	      (append-directories (component-root-dir component type)
 				  version-dir))
-	  (component-pathname component type))))
+	  (component-pathname component type)))
+	(module-p (if (member (component-type component) '(:module)) t)))
+
+    ;; ;madhu 240324 recipe for disaster
+    (when module-p
+      (setq pathname
+	    (concatenate 'string pathname
+			 (if (pathname-logical-p (pathname pathname))
+			     ";"
+			     "/"))))
+
 
     ;; When a logical pathname is used, it must first be translated to
     ;; a physical pathname. This isn't strictly correct. What should happen
@@ -3204,13 +3219,14 @@ used with caution.")
 
     ;; ;madhu 060520 (PATHNAME pathname) or search-hosts are logical
     (cond ((pathname-logical-p (pathname pathname)) ; See definition of test above.
+	  (unless module-p
 	   (setf pathname
 		 (merge-pathnames pathname
 				  (make-pathname ;madhu 080208 (lw)
 				   :name (or (pathname-name pathname)
 					     (component-name component))
 				   :type (component-extension component
-							      type))))
+							      type)))))
 	   (namestring (translate-logical-pathname pathname)))
 	  (t
 	   (fix-clozure-namestring
@@ -3246,6 +3262,7 @@ used with caution.")
 			   ;; files with periods in them (:file
 			   ;; "glib.package")
 			   :name
+                          (unless module-p
 			   (or
 			    ;; handle (:file "src/package")
 			    ;; handle (:file "glib.package")
@@ -3263,11 +3280,12 @@ used with caution.")
                                            #+scl :case
                                            #+scl :common
                                            )
-                            (component-name component))
+                            (component-name component)))
 			   :type
+			  (unless module-p
 			   #-scl (component-extension component type)
 			   #+scl (string-upcase
-				  (component-extension component type))
+				  (component-extension component type)))
 
 			   :device
 			   #+sbcl
