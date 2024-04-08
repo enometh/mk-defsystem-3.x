@@ -5251,7 +5251,7 @@ just write to the given pathname.
 	       (and (pathnamep module-name)
 		    (setq module-name (namestring module-name)))
 	       (find (string module-name)
-		     *modules* :test #'string=))
+		     *modules* :test #'string-equal))
     (cond (pathname
            (funcall *old-require* module-name pathname))
 
