@@ -691,7 +691,7 @@
 ;;; 2023-11-22 dsm  package-inferred-hack: handle all defsystem forms
 ;;;                 in asd file.
 ;;;
-;;; 2024-04-24 dsm  component-full-pathname-i: try to return the
+;;; 2024-03-24 dsm  component-full-pathname-i: try to return the
 ;;;                 directory if the component is a module. the
 ;;;                 string-concat hack is not likely to work.
 
