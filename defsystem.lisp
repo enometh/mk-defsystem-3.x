@@ -7280,6 +7280,18 @@ otherwise return a default system name computed from PACKAGE-NAME."
       (assert (eq (car dir) :relative))
       (copy-seq (cdr dir)))))
 
+(defun ensure-mergable-string (pathname-complication)
+  ;; ;madhu 240410 "add a trailing / to a non-empty :pathname string
+  ;; if it does not elready exist.  This is necessary because of the
+  ;; assumptions in extract-subdirs
+  (if (and (stringp pathname-complication)
+	   (not (equal pathname-complication ""))
+	   (not (eql (elt pathname-complication
+			  (1- (length pathname-complication)))
+		     #\/)))
+      (concatenate 'string pathname-complication "/")
+      pathname-complication))
+
 (defun make-mk-form-1 (components-form subdirs)
   (if (endp subdirs)
       components-form
@@ -7292,7 +7304,7 @@ otherwise return a default system name computed from PACKAGE-NAME."
 (defun make-mk-form (asd-form subdirs asd-path)
   (let* ((depends-on (getf asd-form :depends-on))
 	 (components (getf asd-form :components))
-	 (pathname-complication (getf asd-form :pathname))
+	 (pathname-complication (ensure-mergable-string (getf asd-form :pathname)))
 	 (package-inferred-p
 	  (let ((p (string (getf asd-form :class))))
 	    (or (eq p :package-inferred-system)
@@ -7368,7 +7380,7 @@ otherwise return a default system name computed from PACKAGE-NAME."
 	 (binary-dir (format nil "*~(~A~)-binary-dir*" name))
 	 (forms (sort (loop for f in asd-file-list
 	    append   (loop  for asd-form in (file-asd-forms f)
-			    for pathname-complication = (getf asd-form :pathname)
+			    for pathname-complication = (ensure-mergable-string (getf asd-form :pathname))
 			    for subdirs = (extract-subdirs f (translate-logical-pathname root-dir)
 							   pathname-complication)
 			    for mk-form = (with-simple-restart (skip "Skip")
