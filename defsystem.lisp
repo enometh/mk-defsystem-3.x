@@ -7056,7 +7056,8 @@ otherwise return a default system name computed from PACKAGE-NAME."
 			(push (frob-plist-serial val) ret))
 		       ((eql x :file)
 			(push (frob-plist-path val) ret))
-		       ((member x '(:doc-file :static-file)) nil))))))
+		       ((member x '(:doc-file :static-file)) nil)
+		       (t (error "FIXME")))))))
     (nreverse ret)))
 
 #+nil
