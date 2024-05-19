@@ -6839,6 +6839,11 @@ nil)
     (merge-pathnames path
 		     (component-root-dir system :source))))
 
+(defun system-source-directory (system)
+  (system-relative-pathname system ""))
+
+(defun system-source-file (system)
+  (find-system-definition-pathname system))
 
 
 ;;; ----------------------------------------------------------------------
