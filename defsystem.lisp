@@ -2682,6 +2682,13 @@ D
   (description nil :type (or null string))
   (license nil :type (or null string))
 
+  (homepage nil :type (or null string))
+  (bug-tracker nil :type (or null string))
+  (mailto nil :type (or null string))
+  (long-name nil :type (or null string))
+  (source-control nil :type list)
+  (entry-point nil :type t)
+
   ;; Added NON-REQUIRED-P slot.  Useful for optional items.
   (non-required-p nil :type boolean)	; If T a missing file or
 					; sub-directory will not cause
