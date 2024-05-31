@@ -694,7 +694,36 @@
 ;;; 2024-03-24 dsm  component-full-pathname-i: try to return the
 ;;;                 directory if the component is a module. the
 ;;;                 string-concat hack is not likely to work.
+;;;
+;;; 2024-05-31 dsm  workarounds for mkcl defstruct redefinition problems.
 
+;;;                 Redefining a struct as of mkcl-1.11.178 does not
+;;;                 work even if the structure definition does not
+;;;                 change. this causes a problem when trying to use
+;;;                 mk-defsystem to mangae defsystem.lisp.  mk:oos
+;;;                 :LOAD and :COMPILE operations redefine the
+;;;                 defstructs and clobber all structure objects
+;;;
+;;;                 (:COMPILE-ONLY): new component-operation which
+;;;                 skips the load operation.
+;;;
+;;;                 (MKLIB): takes a new keyword argument
+;;;                 :skip-ensure-compiled which lets it skip the step
+;;;                 where the system and (all subsystems) are compiled
+;;;                 twice (first to produce first the fasl file and
+;;;                 then to produce the shared objects for each
+;;;                 component).  calls to find-system now supply :load
+;;;                 by default.
+;;;
+;;;                 (ecl-compile-one-component): unused. call
+;;;                 compile-file twice to first produce the fasl file
+;;;                 and then produce the shared object (with :fasl-p
+;;;                 nil for mkcl and :system-p t for ecl)
+;;;
+;;;                 (reset-pristine) clears all mk-defsystem state, so
+;;;                 systems can be read again and new objects can be
+;;;                 created.
+;;;
 
 
 ;;;---------------------------------------------------------------------------
@@ -4372,7 +4401,7 @@ KEYWORD package, so you need specify keywords explicitly."
 		  (nconc
 		   (when handle-deps-p
 		     (loop for dep in deps
-			   for depsys = (ignore-errors (mk:find-system dep))
+			   for depsys = (ignore-errors (mk:find-system dep :load))
 			   unless depsys
 			   do
 			   (warn "Not handling unknown system: ~S." dep)
@@ -4383,7 +4412,7 @@ KEYWORD package, so you need specify keywords explicitly."
 		       (mk::component
 			(ecase (mk::component-type system)
 			  (:defsystem system)))
-		       ((or string symbol) (mk:find-system system))))))
+		       ((or string symbol) (mk:find-system system :load))))))
 
 ;; if function is nil return a list of files
 (defun system-map-files (system &optional function &key
@@ -4416,6 +4445,16 @@ For MKCL supply :FASL-P NIL to MKCL's COMPILE-FILE
 
 (defun ecl-munge-o (pathname)
   (make-pathname :type "o" :defaults pathname))
+
+(defun ecl-compile-one-component (component-obj)
+  (let* ((source (component-full-pathname component-obj :source))
+	 (binary (component-full-pathname component-obj :binary))
+	 (object (ecl-munge-o binary)))
+    (list
+     (compile-file source :output-file binary)
+     (compile-file source :output-file object
+		   #+ecl :system-p #+ecl t
+		   #+mkcl :fasl-p #+mkcl t))))
 
 (defun %concated-fasl-pathname (system &key (defaults *default-pathname-defaults*) #+(or ecl mkcl) (ecl-build-type :fasl) no-lib-prefix no-library-suffix)
   (make-pathname
@@ -4523,7 +4562,8 @@ For MKCL supply :FASL-P NIL to MKCL's COMPILE-FILE
 	      (recursively-handle-deps t)
 	      #+(or ecl mkcl) (ecl-build-type :fasl)
 	      #+(or ecl mkcl) init-function-name
-	      #+(or ecl mkcl) build-program-args)
+	      #+(or ecl mkcl) build-program-args
+	      skip-ensure-compiled)
   "Creates a concatenated fasl file named \"SYSTEM-LIBRARY.FASL\" from
 the fasl files of the given mk-defsystem system SYSTEM.  The system
 should already be compiled.  The concatenated file is written in the
@@ -4547,6 +4587,13 @@ the basename of the target file.
 
 Use :OVERRIDE <TARGET PATHNAME> to skip all these shennanigans and
 just write to the given pathname.
+
+If SKIP-ENSURE-COMPILED is non-NIL assume that the ECL or MKCL user
+has already compiled the objects with mk:*ecl-compile-file-system-p*
+set to t to produce the appropriate object artifacts.  This is
+primarily meant used to be used when mk-defystem.system is a
+dependency of the and mkcl (as of 1.178) should be instructed not to
+reload this module which clobbers all objects.
 "
   (let* ((system (ensure-system system))
 	   (pathname (or override
@@ -4572,13 +4619,14 @@ just write to the given pathname.
 
       ;; for ecl and mkcl - make sure the system is compiled
       #+(or ecl mkcl)
+     (unless skip-ensure-compiled
       (ecase ecl-build-type
 	((nil :fasl)
 	 (compile-system system))
 	((:shared-library :static-library)
 	 (let ((*operations-propagate-to-subsystems* t)
 	       (*ecl-compile-file-system-p* t))
-	   (make::compile-system system))))
+	   (make::compile-system system)))))
 
       #+(or ecl mkcl)
       (apply
@@ -6067,6 +6115,8 @@ output to *trace-output*.  Returns the shell's exit code."
 (component-operation 'compile  'compile-and-load-operation)
 (component-operation :load     'load-file-operation)
 (component-operation 'load     'load-file-operation)
+(component-operation 'compile-only 'compile-file-operation)
+(component-operation :compile-only 'compile-file-operation)
 )
 
 
@@ -7575,5 +7625,12 @@ loaded so far."
 
 #+nil
 (already-loaded-systems)
+
+(defun reset-pristine ()
+  (clrhash *defined-systems*)
+  (clrhash *defsystem-to-defsystem-file-map*)
+  (clrhash *binary-pathnames-table*)
+  (clrhash *source-pathnames-table*)
+  (clrhash *language-table*))
 
 ;;; end of file -- defsystem.lisp --
