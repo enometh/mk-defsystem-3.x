@@ -1242,7 +1242,7 @@
 (let ((cl (find-package "CL")))
   (unless (find cl (package-use-list "MAKE"))
     (warn "package: ADDING CL to MAKE use list")
-    (use-package "CL" "MAKE")))
+    (use-package '("CL") "MAKE")))
 
 (let ((nicknames (package-nicknames "MAKE")))
   (unless (find "MK" nicknames :test #'equal)
