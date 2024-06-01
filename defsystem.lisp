@@ -724,6 +724,9 @@
 ;;;                 systems can be read again and new objects can be
 ;;;                 created.
 ;;;
+;;; 2024-06-01 dsm  :delete-binaries: also delete ecl and mkcl shared
+;;;                 artefacts. (arguably this should be done only when
+;;;                 *ecl-compile-file-system-p* is t)
 
 
 ;;;---------------------------------------------------------------------------
@@ -6458,10 +6461,17 @@ or does not contain valid compiled code."
 	 (cfp (make-pathname :type "cfp" :defaults binary-pname)))
     (list lib cfp)))
 
+(defun delete-binaries-c-shared-objects (c)
+  (let* ((binary-pname (component-full-pathname c :binary))
+	 (o (ecl-munge-o binary-pname)))
+    (list o)))
+
 (defun delete-binaries-compute-output-files (c)
   (append
    #+clisp
    (delete-binaries-clisp-output-files c)
+   #+(or mkcl ecl)
+   (delete-binaries-c-shared-objects c)
    (let (lang lang-name output-files-function output-files)
      (when (and (setq lang-name (component-language c))
 		(setq lang (find-language lang-name))
