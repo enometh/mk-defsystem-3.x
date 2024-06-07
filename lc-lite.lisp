@@ -1,7 +1,7 @@
 ;;; -*- Mode: LISP; Package: :cl-user; BASE: 10; Syntax: ANSI-Common-Lisp; -*-
 ;;;
 ;;;   Touched: Mon Aug 06 13:24:56 2007 +0530 <enometh@net.meer>
-;;;   Time-stamp: <2020-05-07 18:47:29 IST>
+;;;   Time-stamp: <>
 ;;;   Bugs-To: enometh@net.meer
 ;;;   Status: Experimental. Do not redistribute.
 ;;;   Copyright (C) 2007-2017 Madhu.  All Rights Reserved.
@@ -9,6 +9,79 @@
 ;;; Loader for compiling and loading cmucl-init.lisp
 ;;;
 (in-package "CL-USER")
+
+(defpackage "LC-LITE"
+  (:use "CL"))
+(in-package "LC-LITE")
+
+(defvar +exports+
+  '(:export
+    "BINARY-DIRECTORY"
+    "*SOURCE-DIRECTORY-ROOT*"
+    "*BINARY-DIRECTORY-FASL-ROOT*"
+    "LC-LITE"
+    "LC"
+    "WILDSET-LPN-TRANSLATIONS"
+    "RESOLVE-UP-DIRECTORY-COMPONENTS"
+    "SANITIZE-TILDE-IN-PATHNAME"))
+
+(defvar +interns+
+  '(:intern
+    "*BINARY-DIRECTORY-PATTERN*"
+    "*BINARY-DIRECTORY-FEATURE*"
+    "*BINARY-DIRECTORY-VERSION*"
+    "*BINARY-DIRECTORY-OS-FEATURE*"
+    "*BINARY-DIRECTORY-ENSURE-DIRECTORIES-EXIST*"
+    "*BINARY-DIRECTORY-SOURCE-FILE-TYPES*"
+    "*BINARY-DIRECTORY-ARCHITECTURE-FEATURE*"
+    "REL-SOURCE-PATH"
+    "WILDIFY"
+    "FUNNEL-SYMBOL"
+    ))
+
+;; allow variables exported in package LC-LITE and used in CL-USER
+;; (via USE-PACKAGE) to be defined in CL-USER even before loading
+;; lc-lite.lisp. FUNNEL-SYMBOL will handle dealing with these symbols
+;; when lc-lite.lisp.lisp is loaded.  package1 is always cl-user
+;; package2 is always lc-lite.
+
+(eval-when (:compile-toplevel :load-toplevel :execute)
+(defun funnel-symbol (name package1 package2 export-p &key (debug-p t))
+  (assert (not (equal name "NIL")))
+  (check-type name string)
+  (flet ((import-one (sym package)
+	   (check-type sym symbol)
+	   (when debug-p
+	     (format t "lc-lite: imported ~A::~A~%" sym
+		     (package-name (symbol-package sym))))
+	   (import (list sym) package))
+	 (export-one (sym package)
+	   (check-type sym symbol)
+	   (when debug-p
+	     (format t "lc-lite: exported ~A::~A~%" sym
+		     (package-name (symbol-package sym))))
+	   (export (list sym) package)))
+    (multiple-value-bind (sym1 stat1) (find-symbol name package1)
+      (declare (ignorable stat1))
+      (multiple-value-bind (sym2 stat2) (find-symbol name package2)
+	(if (and sym1 (not sym2))
+	    (progn (import-one sym1 package2)
+		   (when export-p
+		     (assert (not (eql stat2 :external)))
+		     (export-one sym1 package2)))
+	    (progn (unless sym2
+		     (multiple-value-setq (sym2 stat2)
+		       (intern name package2)))
+		   (if (and export-p (not (eql stat2 :external)))
+		       (export-one sym2 package2)))))))))
+
+(eval-when (:compile-toplevel :load-toplevel :execute)
+  (dolist (name (cdr +interns+))
+    (funnel-symbol name "CL-USER" "LC-LITE" nil))
+  (dolist (name (cdr +exports+))
+    (funnel-symbol name "CL-USER" "LC-LITE" t))
+  (use-package "LC-LITE" "CL-USER"))
+
 
 ;;; ----------------------------------------------------------------------
 ;;;
