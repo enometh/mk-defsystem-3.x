@@ -37,7 +37,7 @@
 		:sunos :hpux :unix :mezzano))
       (cerror "Continue." "Unknown implementation.")))
 
-(defvar *binary-architecture-feature*
+(defvar *binary-directory-architecture-feature*
   (or (some (lambda (x)
 	      (and (find x *features*) (string-downcase x)))
 	      '(:powerpc :ppc :x86 :x86-64 :x86_64 :amd64 :i686 :i586
@@ -90,7 +90,7 @@
 	       (list "-"
 		     *binary-directory-os-feature*
 		     "-"
-		     *binary-architecture-feature*)))))
+		     *binary-directory-architecture-feature*)))))
   "List of strings denoting directory components under implementation's fasl
 root.")
 
@@ -229,6 +229,20 @@ DRY-RUN."
 
 (export '(binary-directory lc))
 
+
+;;; ----------------------------------------------------------------------
+;;;
+;;;
+;;;
+
+(defun wildify (root &rest components)
+  "COMPONENTS are directory components. Returns a WILD PATHNAME."
+  (merge-pathnames (make-pathname :name :wild :type :wild :version :wild
+				  :directory (append '(:relative) components)
+				  :host nil)
+		   root
+		   nil))
+
 (defun wildset-lpn-translations (HOST ROOT &key wipe dry-run)
   "Wildify directory ROOT and set that as the logical-pathname
 translations for HOST."
@@ -237,20 +251,11 @@ translations for HOST."
 	(setf (logical-pathname-translations HOST) nil))
       (when (or wipe (not (ignore-errors (logical-pathname-translations HOST))))
 	(let ((form `(("*.*.*"
-		       ,(merge-pathnames
-			 (make-pathname :host nil :name :wild :type :wild :version :wild
-					:directory '(:relative))
-			 ROOT nil))
+		       ,(wildify root))
 		      ("**;*.*.*"
-		       ,(merge-pathnames
-			 (make-pathname :host nil :name :wild :type :wild :version :wild
-					:directory '(:relative :wild-inferiors))
-			 ROOT nil))
+		       ,(wildify root :wild-inferiors))
 		      (";**;*.*.*"
-		       ,(merge-pathnames
-			 (make-pathname :host nil :name :wild :type :wild :version :wild
-					:directory '(:relative :wild-inferiors))
-			 ROOT nil)))))
+		       ,(wildify root :wild-inferiors)))))
 	  (if dry-run
 	      form
               (setf (logical-pathname-translations HOST) form ))))))
