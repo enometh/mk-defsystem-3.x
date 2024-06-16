@@ -5034,20 +5034,22 @@ reload this module which clobbers all objects.
 	    (ensure-external-system-def-loaded component))
 
 	  (when (or (eq type :defsystem) (eq type :system))
-            (handler-case
-                (operate-on-system-dependencies component
-                                                operation
-                                                force)
-              (error (e)
-                (tell-user-generic
-                 (format nil "Some system dependency for ~A failed."
-                         (component-name component)))
-                (if (component-non-required-p component)
-                    (tell-user-generic
-                     (format nil "Dependency ignored as ~A in non required."
-                             (component-name component)))
-                    (error e))
-              )))
+	    (block skip
+	      (handler-bind
+		  ((error
+		    (lambda (e)
+		      (declare (ignorable e))
+		      (tell-user-generic
+		       (format nil "Some system dependency for ~A failed."
+			       (component-name component)))
+		      (when (component-non-required-p component)
+			(tell-user-generic
+			 (format nil "Dependency ignored as ~A in non required."
+				 (component-name component)))
+			(return-from skip)))))
+		(operate-on-system-dependencies component
+						operation
+						force))))
 
 	  ;; Do any compiler proclamations
 	  (when (component-proclamations component)
