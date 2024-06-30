@@ -6968,7 +6968,7 @@ the DEFPACKAGE-FORM uses it or imports a symbol from it."
 		(dolist (p arguments) (dep (string p))))
 	       ((:import-from :shadowing-import-from)
 		(dep (string (first arguments))))
-	       ((:nicknames :documentation :shadow :export :intern :unintern :recycle)))))
+	       ((:nicknames :documentation :shadow :export :intern :unintern :recycle :local-nicknames)))))
      (nreverse ret))
    :from-end t :test 'equal))
 
