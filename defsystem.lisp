@@ -7648,4 +7648,16 @@ loaded so far."
   (clrhash *source-pathnames-table*)
   (clrhash *language-table*))
 
+(defun find-systems-matching (string &key loaded (test #'equalp))
+  "Experimental. return a list of system names that match the
+given string under TEST.  If LOADED is non-NIL, only return systems
+that are already loaded."
+  (remove-if-not (lambda (x) (search string x :test test))
+		 (if loaded
+		     (already-loaded-systems)
+		     (mapcar #'component-name (defined-systems)))))
+
+#+nil
+(find-systems-matching "CFFI")
+
 ;;; end of file -- defsystem.lisp --
