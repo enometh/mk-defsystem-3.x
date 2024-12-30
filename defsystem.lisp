@@ -727,7 +727,11 @@
 ;;; 2024-06-01 dsm  :delete-binaries: also delete ecl and mkcl shared
 ;;;                 artefacts. (arguably this should be done only when
 ;;;                 *ecl-compile-file-system-p* is t)
-
+;;;
+;;; 2024-12-30 dsm  operate-on-system now has a new keyword argument
+;;;                 :propagate which defaults to and binds
+;;;                 *operations-propagate-to-subsystems*, to limit
+;;;                 say :compile :force to the a single system.
 
 ;;;---------------------------------------------------------------------------
 ;;; ISI Comments
@@ -4773,6 +4777,8 @@ reload this module which clobbers all objects.
 			       dribble
 			       (minimal-load *minimal-load*)
 			       (override-compilation-unit t)
+			       ((:propagate *operations-propagate-to-subsystems*)
+				*operations-propagate-to-subsystems*)
 			       )
   (declare #-(or :cltl2 :ansi-cl) (ignore override-compilation-unit))
   (unwind-protect
@@ -4846,7 +4852,9 @@ reload this module which clobbers all objects.
 			     *bother-user-if-no-binary*)
 			    (compile-during-load *compile-during-load*)
 			    dribble
-			    (minimal-load *minimal-load*))
+			    (minimal-load *minimal-load*)
+			    ((:propagate *operations-propagate-to-subsystems*)
+			     *operations-propagate-to-subsystems*))
   ;; For users who are confused by OOS.
   (operate-on-system
    name :compile
@@ -4870,7 +4878,9 @@ reload this module which clobbers all objects.
 			 (bother-user-if-no-binary *bother-user-if-no-binary*)
 			 (compile-during-load *compile-during-load*)
 			 dribble
-			 (minimal-load *minimal-load*))
+			 (minimal-load *minimal-load*)
+			 ((:propagate *operations-propagate-to-subsystems*)
+			  *operations-propagate-to-subsystems*))
   ;; For users who are confused by OOS.
   (operate-on-system
    name :load
