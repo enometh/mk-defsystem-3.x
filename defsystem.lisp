@@ -732,6 +732,9 @@
 ;;;                 :propagate which defaults to and binds
 ;;;                 *operations-propagate-to-subsystems*, to limit
 ;;;                 say :compile :force to the a single system.
+;;;
+;;; 2025-01-29 dsm  mk-defsystem-p, type mk-defsystem,
+;;;                 get-recursive-deps.
 
 ;;;---------------------------------------------------------------------------
 ;;; ISI Comments
@@ -4778,8 +4781,7 @@ reload this module which clobbers all objects.
 			       (minimal-load *minimal-load*)
 			       (override-compilation-unit t)
 			       ((:propagate *operations-propagate-to-subsystems*)
-				*operations-propagate-to-subsystems*)
-			       )
+				*operations-propagate-to-subsystems*))
   (declare #-(or :cltl2 :ansi-cl) (ignore override-compilation-unit))
   (unwind-protect
       ;; Protect the undribble.
@@ -7669,5 +7671,45 @@ that are already loaded."
 
 #+nil
 (find-systems-matching "CFFI")
+
+;;madhu 250128
+(defun mk-defsystem-p (system)
+  (and (component-p system)
+       (eql (component-type system) :defsystem)))
+
+(deftype mk-defsystem ()
+  `(satisfies mk-defsystem-p))
+
+#+nil
+(typep (find-system 'cffi) 'mk-defsystem)
+
+(defun get-recursive-deps (systems &key (seen (list :SEEN)) (depth 0)
+			   (include-roots nil) &aux roots system)
+  "Return the set containing SYSTEMS and the systems that they depend on
+transitively.  SYSTEMS can be a single system. If INCLUDE-ROOTS is non-NIL
+SYSTEMS are included in the returned value."
+  (dolist (system1 (if (and systems (atom systems)) (list systems) systems))
+    (unless (mk-defsystem-p system1)
+      (setq system (find-system system1 :load-or-nil)))
+    (unless system
+      (let ((name (canonicalize-system-name system1)))
+	(if (find name *modules* :test #'equal)
+	    (setq system name))))
+    (assert system nil "System or Module ~S not found" system)
+    (when (zerop depth)
+      (push system roots))
+    (unless (find system (cdr seen) :test #'equal)
+      (setf (cdr seen) (cons system (cdr seen))))
+    (when (component-p system)
+      (get-recursive-deps (component-depends-on system) :seen seen :depth (1+ depth))))
+  (if (zerop depth)
+      (if include-roots
+	  (cdr seen)
+	  (remove-if (lambda (x) (member x roots)) (cdr seen)))))
+
+(export '(mk-defsystem mk-defsystem-p get-recursive-deps))
+
+#+nil
+(get-recursive-deps 'cffi)
 
 ;;; end of file -- defsystem.lisp --
