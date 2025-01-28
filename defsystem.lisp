@@ -643,7 +643,7 @@
 ;;;
 ;;; 2022-01-23 dsm  abcl support. courtesy marcoxa's c-l.net branch.
 ;;;
-;;; 2022-05-03 dsm  stab at already-defined-systems
+;;; 2022-05-03 dsm  stab at already-loaded-systems
 ;;;
 ;;; 2022-10-23 dsm  handle output-translations. (SETQ
 ;;;                 MAKE:*OUTPUT-TRANSLATIONS-STRATEGY* :USER-CACHE)
