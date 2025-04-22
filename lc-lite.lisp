@@ -310,7 +310,9 @@ DRY-RUN."
 
 (defun wildify (root &rest components)
   "COMPONENTS are directory components. Returns a WILD PATHNAME."
-  (merge-pathnames (make-pathname :name :wild :type :wild :version :wild
+  (merge-pathnames (make-pathname :name :wild :type :wild :version
+				  #+clisp :newest
+				  #-clisp :wild
 				  :directory (append '(:relative) components)
 				  :host nil)
 		   root
