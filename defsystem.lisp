@@ -735,6 +735,9 @@
 ;;;
 ;;; 2025-01-29 dsm  mk-defsystem-p, type mk-defsystem,
 ;;;                 get-recursive-deps.
+;;;
+;;; 2025-05-04 dsm  *dependencies-compilation-cache*, speed up compile
+;;;                 operations by tracking already compiled systems.
 
 ;;;---------------------------------------------------------------------------
 ;;; ISI Comments
@@ -1629,6 +1632,28 @@ and up to date.")
 (defvar *cmu-errors-to-file* t
   "If T, cmulisp will write an error file during compilation")
 
+(defvar *dependencies-compilation-cache* NIL
+  "If T the cache is disabled (sic).  If NIL, the outermost call to
+OPERATE-ON-SYSTEM :COMPILE initializes this to a hash-table, and the
+table is propagated in subsequent calls.  Tracks system dependencies
+which have already been compiled, so they are not considered again.")
+
+#||
+;; to collect statistics
+(setq *dependencies-compilation-cache* (make-hash-table :test #'equal))
+(clrhash *dependencies-compilation-cache*)
+(defun print-dependencies-compilation-cache ()
+  "Return an array (name . count) where names are in the order in which the systems were compiled and count is the number of times the system would have been  compiled"
+  (let ((ord (make-array (hash-table-count *dependencies-compilation-cache*))))
+    (maphash (lambda (k v)
+	       (destructuring-bind (pos . count) v
+		 (setf (elt ord pos) (cons k count))))
+	     *dependencies-compilation-cache*)
+    ord))
+;; (mk:oos system-of-interest :compile)
+(print-dependencies-compilation-cache)
+(setq *dependencies-compilation-cache* nil))
+||#
 
 ;;; ********************************
 ;;; Global Variables ***************
@@ -4824,6 +4849,10 @@ reload this module which clobbers all objects.
 		(*bother-user-if-no-binary* bother-user-if-no-binary)
 		(*load-source-instead-of-binary* load-source-instead-of-binary)
 		(*minimal-load* minimal-load)
+		(*dependencies-compilation-cache*
+		 (or *dependencies-compilation-cache*
+		     (and (find operation '(:compile compile))
+			  (make-hash-table :test #'equal))))
 		(system (if (and (component-p name)
                                  (member (component-type name)
 					 '(:system :defsystem :subsystem)))
@@ -5106,6 +5135,21 @@ reload this module which clobbers all objects.
 		  ((:module :system :subsystem :defsystem)
 		   (operate-on-components component operation force changed))))
 
+	  ;; mark compiled systems to avoid recompilation
+	  (when (and (hash-table-p *dependencies-compilation-cache*)
+		     (or (eq type :defsystem) (eq type :system)
+			 (eq type :subsystem)))
+	    (assert (find operation '(:compile 'compile)))
+	    (let ((key (canonicalize-system-name (component-name component))))
+	      (multiple-value-bind (cons foundp)
+		  (gethash key *dependencies-compilation-cache*)
+		(cond (foundp (incf (cdr cons)))
+		      (t (setf (gethash key *dependencies-compilation-cache*)
+			       (cons (hash-table-count
+				      *dependencies-compilation-cache*)
+				     1))))))
+			   0)
+
 	  ;; Do any final actions
 	  (when (component-finally-do component)
 	    (tell-user-generic (format nil "Doing finalizations for ~A"
@@ -5172,7 +5216,14 @@ reload this module which clobbers all objects.
                ;; systems, not defstructs.
                ;; Aside from system, operation, force, for everything else
                ;; we rely on the globals.
-               (unless (and *providing-blocks-load-propagation*
+	       (unless (or (and (hash-table-p *dependencies-compilation-cache*)
+				(find operation '(:compile compile))
+				(let ((key (canonicalize-system-name system)))
+				  (multiple-value-bind (cons foundp)
+				      (gethash key *dependencies-compilation-cache*)
+				    (when foundp
+				      (incf (cdr cons))))))
+		       (and *providing-blocks-load-propagation*
                             ;; If *providing-blocks-load-propagation* is T,
                             ;; the system dependency must not exist in the
                             ;; *modules* for it to be loaded. Note that
@@ -5180,7 +5231,7 @@ reload this module which clobbers all objects.
                             (find operation '(load :load))
                             ;; (or (eq force :all) (eq force t))
                             (find (canonicalize-system-name system)
-                                  *modules* :test #'string-equal))
+                                  *modules* :test #'string-equal)))
 
                  (operate-on-system system operation :force force)))
 
