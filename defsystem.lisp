@@ -736,7 +736,7 @@
 ;;; 2025-01-29 dsm  mk-defsystem-p, type mk-defsystem,
 ;;;                 get-recursive-deps.
 ;;;
-;;; 2025-05-04 dsm  *dependencies-compilation-cache*, speed up compile
+;;; 2025-05-04 dsm  *compilation-dependencies-stats*, speed up compile
 ;;;                 operations by tracking already compiled systems.
 
 ;;;---------------------------------------------------------------------------
@@ -1632,28 +1632,41 @@ and up to date.")
 (defvar *cmu-errors-to-file* t
   "If T, cmulisp will write an error file during compilation")
 
-(defvar *dependencies-compilation-cache* NIL
-  "If T the cache is disabled (sic).  If NIL, the outermost call to
-OPERATE-ON-SYSTEM :COMPILE initializes this to a hash-table, and the
-table is propagated in subsequent calls.  Tracks system dependencies
-which have already been compiled, so they are not considered again.")
+(defvar *compilation-dependencies-stats* nil
+  "Caches stats of systems encountered during an (OPERATE-ON-SYSTEM
+:COMPILE) call so subsequent calls to the same system can be skipped.
 
-#||
-;; to collect statistics
-(setq *dependencies-compilation-cache* (make-hash-table :test #'equal))
-(clrhash *dependencies-compilation-cache*)
-(defun print-dependencies-compilation-cache ()
-  "Return an array (name . count) where names are in the order in which the systems were compiled and count is the number of times the system would have been  compiled"
-  (let ((ord (make-array (hash-table-count *dependencies-compilation-cache*))))
+If set to T the caching mechanism is disabled (sic).  If set to
+NIL (default) the outermost call to (OPERATE-ON-SYSTEM :COMPILE) binds
+this to either a new equal hash-table which (is thrown away at the end
+of the call), or to a freshly cleared *LAST-COMPILE-STATS* table.
+This table is propagated to subsequent calls.
+
+The keys are canonicalized system names and the values are a cons of 2
+numbers (ORD . COUNT) where ORD represents the order in which the
+system was compiled and COUNT represents the number of times a compile
+operation call was encountered on that system.")
+
+(defvar *last-compiled-stats* (make-hash-table :test #'equal)
+  "Set to NIL if you don't want to keep around the compilation
+dependencies stats for the last (OPERATE-ON-SYSTEM :COMPILE)
+operation.")
+
+(defvar *last-compiled-system* nil
+  "The name of the system of the last (OPERATE-ON-SYSTEM :COMPILE)
+operation corresponding to compilation dependencies stored in
+*LAST-COMPILED-STATS*.")
+
+(defun last-compiled-stats (&optional (table *last-compiled-stats*))
+  "Return an array (name . count) where names are in the order in which
+the systems were compiled and count is the number of times the compile
+opertation was recursively called on the system."
+  (let ((ord (make-array (hash-table-count table))))
     (maphash (lambda (k v)
 	       (destructuring-bind (pos . count) v
 		 (setf (elt ord pos) (cons k count))))
-	     *dependencies-compilation-cache*)
+	     table)
     ord))
-;; (mk:oos system-of-interest :compile)
-(print-dependencies-compilation-cache)
-(setq *dependencies-compilation-cache* nil))
-||#
 
 ;;; ********************************
 ;;; Global Variables ***************
@@ -4849,15 +4862,20 @@ reload this module which clobbers all objects.
 		(*bother-user-if-no-binary* bother-user-if-no-binary)
 		(*load-source-instead-of-binary* load-source-instead-of-binary)
 		(*minimal-load* minimal-load)
-		(*dependencies-compilation-cache*
-		 (or *dependencies-compilation-cache*
-		     (and (find operation '(:compile compile))
-			  (make-hash-table :test #'equal))))
+		(*compilation-dependencies-stats*
+		 (or *compilation-dependencies-stats*
+		     (when (find operation '(:compile compile))
+		       (or (when (hash-table-p *last-compiled-stats*)
+			     (clrhash *last-compiled-stats*)
+			     (setq *last-compiled-system* name)
+			     *last-compiled-stats*)
+			  (make-hash-table :test #'equal)))))
 		(system (if (and (component-p name)
                                  (member (component-type name)
 					 '(:system :defsystem :subsystem)))
                             name
                             (find-system name :load))))
+
 ;; ;madhu 190517 FIXME!
 	    #-(or :abcl CMU CLISP :sbcl :lispworks :cormanlisp scl MKCL ECL :clasp)
 	    (declare (special *compile-verbose* #-MCL *compile-file-verbose*)
@@ -5136,17 +5154,17 @@ reload this module which clobbers all objects.
 		   (operate-on-components component operation force changed))))
 
 	  ;; mark compiled systems to avoid recompilation
-	  (when (and (hash-table-p *dependencies-compilation-cache*)
+	  (when (and (hash-table-p *compilation-dependencies-stats*)
 		     (or (eq type :defsystem) (eq type :system)
 			 (eq type :subsystem)))
 	    (assert (find operation '(:compile 'compile)))
 	    (let ((key (canonicalize-system-name (component-name component))))
 	      (multiple-value-bind (cons foundp)
-		  (gethash key *dependencies-compilation-cache*)
+		  (gethash key *compilation-dependencies-stats*)
 		(cond (foundp (incf (cdr cons)))
-		      (t (setf (gethash key *dependencies-compilation-cache*)
+		      (t (setf (gethash key *compilation-dependencies-stats*)
 			       (cons (hash-table-count
-				      *dependencies-compilation-cache*)
+				      *compilation-dependencies-stats*)
 				     1))))))
 			   0)
 
@@ -5216,11 +5234,11 @@ reload this module which clobbers all objects.
                ;; systems, not defstructs.
                ;; Aside from system, operation, force, for everything else
                ;; we rely on the globals.
-	       (unless (or (and (hash-table-p *dependencies-compilation-cache*)
+	       (unless (or (and (hash-table-p *compilation-dependencies-stats*)
 				(find operation '(:compile compile))
 				(let ((key (canonicalize-system-name system)))
 				  (multiple-value-bind (cons foundp)
-				      (gethash key *dependencies-compilation-cache*)
+				      (gethash key *compilation-dependencies-stats*)
 				    (when foundp
 				      (incf (cdr cons))))))
 		       (and *providing-blocks-load-propagation*
