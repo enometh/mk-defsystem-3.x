@@ -1661,12 +1661,13 @@ operation corresponding to compilation dependencies stored in
   "Return an array (name . count) where names are in the order in which
 the systems were compiled and count is the number of times the compile
 opertation was recursively called on the system."
-  (let ((ord (make-array (hash-table-count table))))
-    (maphash (lambda (k v)
-	       (destructuring-bind (pos . count) v
-		 (setf (elt ord pos) (cons k count))))
-	     table)
-    ord))
+  (cons *last-compiled-system*
+	(let ((ord (make-array (hash-table-count table))))
+	  (maphash (lambda (k v)
+		     (destructuring-bind (pos . count) v
+		       (setf (elt ord pos) (cons k count))))
+		   table)
+	  ord)))
 
 ;;; ********************************
 ;;; Global Variables ***************
