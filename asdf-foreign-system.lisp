@@ -24,7 +24,7 @@
   ;; mk::canonicalize-component-name returns downcase. asdf allows Foo
   ;; and FOO to be different system names. mk-defsystem does not.
   ;; always use the lower case as the name supplied to asdf.
-  (check-type foreign-system mk:mk-defsystem)
+  (check-type foreign-system (or mk:mk-defsystem mk::foreign-system))
   (mk::canonicalize-component-name foreign-system))
 
 (defmethod initialize-instance :after ((asdf-foreign-system asdf-foreign-system) &key &allow-other-keys)
@@ -34,7 +34,7 @@
 	  (canonical-system-name-for-asdf foreign-system))))
 
 (defun register-foreign-system (system)
-  (unless (mk:mk-defsystem-p system)
+  (unless (typep system '(or mk:mk-defsystem mk::foreign-system))
     (setq system (mk:find-system system :error)))
   (or (find-system (canonical-system-name-for-asdf system) nil)
       (asdf::register-system
