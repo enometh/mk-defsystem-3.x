@@ -50,3 +50,35 @@
 (register-foreign-systems 'cffi)
 (asdf:load-system 'trivial-features)
 ||#
+
+
+;;; ----------------------------------------------------------------------
+;;;
+;;; DUMP-SERIAL-FILELIST: mk-defsystem cannot resolve
+;;; component-depends-on dependencies which are not on the same level,
+;;; but asdf allows them. In this case we can produce a list of files
+;;; in the asdf system in the serial order in which they would be
+;;; compiled and loaded by asdf.
+
+(defun dump-serial-filelist (asdf-system)
+  "Return a list of relative namestrings of the lisp files in the given
+system in the serial order that asdf would compile and load them."
+  (loop for (a . b) in (asdf/plan:plan-actions
+			(asdf/plan:make-plan
+			 'asdf/plan:sequential-plan
+			 'asdf:compile-op asdf-system))
+	with source-root = (asdf/system:system-source-directory asdf-system)
+	when (and (typep a 'asdf:compile-op)
+		  (typep b 'asdf:cl-source-file))
+	collect (enough-namestring (asdf:component-pathname b) source-root)))
+
+
+#||
+(load "~/cl/asdf-config.lisp")
+(register-foreign-system 'trivial-features)
+(asdf:load-asd "/path/to/trial.asd")
+(setq $a (asdf:find-system :trial))
+(setq $l (remove-if 'consp (asdf/component:component-sideway-dependencies $a)))
+(dolist (i $l) (mk:oos i :load) (register-foreign-system i))
+(dump-serial-filelist $a)
+||#
