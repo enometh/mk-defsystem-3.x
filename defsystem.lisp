@@ -7317,6 +7317,7 @@ otherwise return a default system name computed from PACKAGE-NAME."
   (loop for x on list for item = (car x)
 	do
 	(cond ((consp item)
+	       (with-simple-restart (ignore-cont "Ignore and Cont")
 	       (ecase (car item)
 		 (:version
 		  (warn "ignoring version depends-on ~S" item)
@@ -7338,7 +7339,7 @@ otherwise return a default system name computed from PACKAGE-NAME."
 		  (if (consp (third item))
 		      (warn "FORMAT-DEPENDS-ON: SKIPPING FORM ~S" item)
 		      (format-mk-name (third item) stream))
-		  (format stream ")"))))
+		  (format stream ")")))))
 	      (t (format-mk-name item stream)))
 	(when (cdr x)
 	  (terpri stream)
