@@ -7665,7 +7665,7 @@ COMPILE-DURING-LOAD to T, and by binding
 
 OP can be :COMPILE or :LOAD.  :PROPAGATE T can be supplied to force
 recompilations of all dependent systems. Other keyword arguments to
-OOS if supplied are passed on to OOS"
+MK-OOS if supplied are passed on to OOS"
   (let* ((extra-args nil)
 	 (propagate-cons (member :propagate args))
 	 (propagate-supplied-p (if propagate-cons t))
@@ -7684,7 +7684,8 @@ OOS if supplied are passed on to OOS"
 			    (list (if (endp (cdr args))
 				 :compile
 				 (cadr args)))
-			    extra-args))
+			    extra-args
+			    (cddr args)))
     (when propagate-supplied-p (remf real-args :propagate))
     (format t "MK-OOS ~{~A~^ ~}~&" real-args)
     (apply #'oos real-args)))
