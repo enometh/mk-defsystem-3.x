@@ -2943,7 +2943,7 @@ D
 
 (defvar *defsystem-to-defsystem-file-map* (make-hash-table :test #'equal))
 
-(defun compute-system-path-1 (module-name definition-pname)
+(defun compute-system-path-1 (module-name &optional definition-pname)
   ;;madhu 170723 - handle retarded module-names "cffi/c2fi" ccl: blows
   ;;up on probe-file. clisp blows up on make-pathname :name
   (let* ((module-string-name-0
@@ -2971,22 +2971,12 @@ D
 	;; Then the central registry. Note that we also check the current
 	;; directory in the registry, but the above check is hard-coded.
 	(cond (*central-registry*
-	       (if (listp *central-registry*)
-		   (dolist (registry *central-registry*)
-		     (let* ((reg-path (registry-pathname registry))
-                            (file (or (probe-file
-                                       (append-directories
-                                        reg-path file-pathname))
-                                      (probe-file
-                                       (append-directories
-                                        reg-path lib-file-pathname)))))
-		       (when file (return file))))
-		   (or (probe-file (append-directories *central-registry*
-						       file-pathname))
-                       (probe-file (append-directories *central-registry*
-						       lib-file-pathname))
-                       ))
-               )
+	       (dolist (reg-path (list-central-registry-directories))
+		 (let ((file (or (probe-file (append-directories
+					      reg-path file-pathname))
+				 (probe-file (append-directories
+					      reg-path lib-file-pathname)))))
+		       (when file (return (values file reg-path))))))
 	      (t
 	       ;; No central registry. Assume current working directory.
 	       ;; Maybe this should be an error?
@@ -2998,17 +2988,20 @@ D
 (defun compute-system-path (module-name &optional definition-pname)
   (if (typep module-name 'component)
       (setq module-name (component-name module-name)))
-  (let ((ret1 (compute-system-path-1 module-name definition-pname))
-	(ret2 (gethash (canonicalize-system-name module-name)
-		       *defsystem-to-defsystem-file-map*)))
-    (cond (ret1
-	   (cond (ret2
-		   (cond ((equalp ret1 (probe-file ret2)) ret1)
-			 (t (warn "MK:COMPUTE-SYSTEM-PATH: system was last loaded from ~A (not ~A): using previously loaded path" ret2 ret1)
-			    ret2)))
-		 (t ret1)))
-	  (t (cond (ret2 ret2)
-		   (t nil))))))
+  (multiple-value-bind (ret1 reg1)
+      (compute-system-path-1 module-name definition-pname)
+    (let ((ret2 (gethash (canonicalize-system-name module-name)
+			 *defsystem-to-defsystem-file-map*)))
+      (values
+       (cond (ret1
+	      (cond (ret2
+		     (cond ((equalp ret1 (probe-file ret2)) ret1)
+			   (t (warn "MK:COMPUTE-SYSTEM-PATH: system was last loaded from ~A (not ~A): using previously loaded path" ret2 ret1)
+			      ret2)))
+		    (t ret1)))
+	     (t (cond (ret2 ret2)
+		      (t nil))))
+       reg1))))
 
 
 (defun system-definition-pathname (system-name)
