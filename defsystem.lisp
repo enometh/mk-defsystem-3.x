@@ -1554,6 +1554,8 @@ pathnames to be checked after the local directory.")
 
 (defun add-registry-location (pathname)
   "Adds a path to the central registry."
+  (if (atom *central-registry*)
+      (setq *central-registry* (list *central-registry*)))
   (pushnew pathname *central-registry* :test #'equal))
 
 
@@ -1566,12 +1568,14 @@ pathnames to be checked after the local directory.")
 
 
 (defun print-central-registry-directories (&optional (stream *standard-output*))
-  (dolist (registry *central-registry*)
+  (dolist (registry (list-central-registry-directories))
     (print (registry-pathname registry) stream)))
 
 
 (defun list-central-registry-directories ()
-  (mapcar #'registry-pathname *central-registry*))
+  (if (atom *central-registry*)
+      (registry-pathname *central-registry*)
+      (mapcar #'registry-pathname *central-registry*)))
 
 
 (defvar *bin-subdir* ".bin/"
