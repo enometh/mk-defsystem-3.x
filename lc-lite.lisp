@@ -182,14 +182,17 @@ root.")
 	  (make-pathname :directory (rec com nil 0) :defaults pathname)
 	  pathname))))
 
-;; UNUSED
-(defun rel-source-path (path)
+(defun rel-source-path (path source-directory-root)
   (let* ((*default-pathname-defaults* #p"")
-	 (rel (enough-namestring path *source-directory-root*))
+	 (rel (if source-directory-root
+		  (enough-namestring
+		   (resolve-up-directory-components path)
+		   (resolve-up-directory-components source-directory-root))
+		  path))
 	 (reld (pathname-directory rel)))
     (when reld
       (ecase (car reld)
-	(:absolute (values (cdr reld) t))
+	(:absolute (values (last reld) t))
 	(:relative (values (cdr reld) nil))))))
 
 (defun binary-directory (pathname &rest dirnames)
@@ -252,6 +255,11 @@ DRY-RUN."
 					 :defaults pathname)))
 		       source-file-types))))
 	  (binary-directory (or binary-directory
+				(and source-directory
+				     (apply #'binary-directory
+					    source-directory
+					    (rel-source-path pathname
+							     source-directory)))
 				(binary-directory pathname)
 				(and source-truename ;nop
 				     (binary-directory source-truename))))
