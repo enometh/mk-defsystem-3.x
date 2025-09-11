@@ -182,14 +182,17 @@ root.")
 	  (make-pathname :directory (rec com nil 0) :defaults pathname)
 	  pathname))))
 
-;; UNUSED
-(defun rel-source-path (path)
+(defun rel-source-path (path source-directory-root)
   (let* ((*default-pathname-defaults* #p"")
-	 (rel (enough-namestring path *source-directory-root*))
+	 (rel (if source-directory-root
+		  (enough-namestring
+		   (resolve-up-directory-components path)
+		   (resolve-up-directory-components source-directory-root))
+		  path))
 	 (reld (pathname-directory rel)))
     (when reld
       (ecase (car reld)
-	(:absolute (values (cdr reld) t))
+	(:absolute (values (last reld) t))
 	(:relative (values (cdr reld) nil))))))
 
 (defun binary-directory (pathname &rest dirnames)
@@ -233,14 +236,14 @@ root.")
 
 (defun lc (pathname &key library-p
 	   force
-	   (source-directory *default-pathname-defaults*)
+	   (source-directory *source-directory-root*)
 	   (source-file-types *binary-directory-source-file-types*)
 	   (create-directories *binary-directory-ensure-directories-exist*)
 	   binary-directory
 	   dry-run)
   "Compile and load pathnanme. CREATE-DIRECTORIES has no effect during
 DRY-RUN."
-  (prog* ((*default-pathname-defaults* source-directory)
+  (prog* ((*default-pathname-defaults* (or source-directory #p""))
 	  ;; we work with the resolved realpath file except for the
 	  ;; purpose of computing the binary-directory path.
 	  (source-truename
@@ -252,6 +255,11 @@ DRY-RUN."
 					 :defaults pathname)))
 		       source-file-types))))
 	  (binary-directory (or binary-directory
+				(and source-directory
+				     (apply #'binary-directory
+					    source-directory
+					    (rel-source-path pathname
+							     source-directory)))
 				(binary-directory pathname)
 				(and source-truename ;nop
 				     (binary-directory source-truename))))
