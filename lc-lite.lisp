@@ -378,35 +378,37 @@ directory."
 
 (defstruct compile-ctx
   src-root
-  fasl-root
-  rel-dir
-  src-dir
-  fasl-dir)
-
-(defun init-compile-ctx (c &key src-root
-			 (fasl-root (and src-root (binary-directory src-root)))
-				rel-dir)
-  (when src-root (setf (compile-ctx-src-root c) src-root))
-  (when fasl-root (setf (compile-ctx-fasl-root c) fasl-root))
-  (when rel-dir (setf (compile-ctx-rel-dir c) rel-dir))
-  (setf (compile-ctx-src-dir c)
-	(merge-pathnames (compile-ctx-rel-dir c)
-			 (compile-ctx-src-root c)))
-  (setf (compile-ctx-fasl-dir c)
-	(merge-pathnames (compile-ctx-rel-dir c)
-			 (compile-ctx-fasl-root c))))
+  fasl-root)
 
 (defun lc-with-compile-ctx (file-name compile-ctx &rest lc-args)
-  (prog1
-      (apply #'lc
-	     (merge-pathnames file-name (compile-ctx-src-dir compile-ctx))
-	     :binary-directory (compile-ctx-fasl-dir compile-ctx)
-	     lc-args)
-    ;; for lispworks personal
-    (gc)))
+  (apply #'lc
+	 #1=(merge-pathnames file-name (compile-ctx-src-root compile-ctx))
+	 :binary-directory
+	 (merge-pathnames
+	  (make-pathname
+	   :directory (cons :relative (rel-source-path
+				       #1# (compile-ctx-src-root compile-ctx)))
+	   :defaults #2=(compile-ctx-fasl-root compile-ctx))
+	  #2#)
+	 lc-args))
 
 (defun lcn (n file-list compile-ctx &rest lc-args)
   (let* ((f (elt file-list n)))
     (apply #'lc-with-compile-ctx f compile-ctx lc-args)))
 
+#||
+(setq $c (mk::%mk-traverse :numcl #'identity t :never))
+(setq $fl (mapcar 'mk::component-source-pathname $c))
+(setq $ctx (make-compile-ctx
+	    :src-root #1="~/cl/extern/Github/numcl/"
+	    :fasl-root (binary-directory #1#)))
+(lcn 0 $fl $ctx :dry-run t)
+||#
 
+#+nil
+(export '(LC-LITE::MAKE-COMPILE-CTX
+	  LC-LITE::COMPILE-CTX-SRC-ROOT
+	  LC-LITE::LC-WITH-COMPILE-CTX
+	  LC-LITE::LCN
+	  LC-LITE::COMPILE-CTX-FASL-ROOT)
+	'LC-LITE)
