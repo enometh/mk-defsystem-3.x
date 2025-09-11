@@ -7788,16 +7788,23 @@ that are already loaded."
 #+nil
 (typep (find-system 'cffi) 'mk-defsystem)
 
-(defun get-recursive-deps (systems &optional (seen (list :SEEN)) (depth 0))
+(defun get-recursive-deps (systems &optional (seen (list :SEEN)) (depth 0)
+			   (include-roots nil) &aux roots)
   "Return the set containing SYSTEMS and the systems that they depend on
-transitively.  SYSTEMS can be a single system."
+transitively.  SYSTEMS can be a single system. If INCLUDE-ROOTS is non-NIL
+SYSTEMS are included in the returned value."
   (dolist (system (if (and systems (atom systems)) (list systems) systems))
     (unless (mk-defsystem-p system)
-      (setq system (find-system system :error)))
+      (setq system (find-system system :load-or-nil)))
+    (when (zerop depth)
+      (push system roots))
     (unless (find system (cdr seen))
       (setf (cdr seen) (cons system (cdr seen))))
     (get-recursive-deps (component-depends-on system) seen (1+ depth)))
-  (if (zerop depth) (cdr seen)))
+  (if (zerop depth)
+      (if include-roots
+	  (cdr seen)
+	  (remove-if (lambda (x) (member x roots)) (cdr seen)))))
 
 #+nil
 (get-recursive-deps 'cffi)
