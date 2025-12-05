@@ -43,7 +43,9 @@
 
 (defun register-foreign-systems (system-or-systems)
   "register system-or-systems and their dependencies with asdf"
-  (mapcar 'register-foreign-system (mk:get-recursive-deps system-or-systems)))
+  (mapcar 'register-foreign-system
+	  (mk:get-recursive-deps system-or-systems
+				 :include-roots t)))
 
 #||
 (require 'cffi)
