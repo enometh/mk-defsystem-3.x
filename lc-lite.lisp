@@ -236,14 +236,14 @@ root.")
 
 (defun lc (pathname &key library-p
 	   force
-	   (source-directory *default-pathname-defaults*)
+	   (source-directory *source-directory-root*)
 	   (source-file-types *binary-directory-source-file-types*)
 	   (create-directories *binary-directory-ensure-directories-exist*)
 	   binary-directory
 	   dry-run)
   "Compile and load pathnanme. CREATE-DIRECTORIES has no effect during
 DRY-RUN."
-  (prog* ((*default-pathname-defaults* source-directory)
+  (prog* ((*default-pathname-defaults* (or source-directory #p""))
 	  ;; we work with the resolved realpath file except for the
 	  ;; purpose of computing the binary-directory path.
 	  (source-truename
