@@ -663,8 +663,8 @@
 ;;;                 a single directory component representing the
 ;;;                 sxhash of the source root directory.
 ;;;
-;;; 2022-11-24 dsm  use a single mk-defsystem-module-provider-function for
-;;;                 all lisps that provide module-provider-hooks
+;;; 2022-11-24 dsm  use a single mk-defsystem-module-provider function
+;;;                 for all lisps that provide module-provider-hooks
 ;;;
 ;;; 2022-12-05 dsm  clasp support. (some fixes compile time package
 ;;;                 issues fixed)
