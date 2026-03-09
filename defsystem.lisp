@@ -3592,7 +3592,10 @@ used with caution.")
 ;;; preprocess-component-definition --
 ;;; New function introduced to manipulate the "evaluated" slots as per
 ;;; SDS' suggestions.
-;;; 20050824
+;;; 20050824 MA
+;;; ;madhu 260310: fix from marcoxa commit 5059d1f6
+;;; 20220204 MA; This is buggy as it ovverides the defaults if the
+;;; slots are not given in the DEFSYSTEM form, need to fi it!
 
 (defun preprocess-component-definition (definition-body)
   `(list* ,@(loop for slot in *component-evaluated-slots*
@@ -3600,11 +3603,12 @@ used with caution.")
 	          when value
                     do (remf definition-body slot)
                     and nconc `(,slot ,value))
-	  #+nil				; madhu 061005 - this code
-					; (1.102 revision) below is
-					; nonsense
+;;	  #+nil				; madhu 061005 - this code
+;;					; (1.102 revision) below is
+;;					; nonsense
 	  ,@(loop for slot in *component-form-slots*
 		  for form = (getf definition-body slot)
+		  when form
 	          do (remf definition-body slot)
                   nconc `(,slot (lambda () ,form)))
 	  ',definition-body))
