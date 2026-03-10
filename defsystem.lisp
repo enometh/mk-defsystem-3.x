@@ -738,6 +738,14 @@
 ;;;
 ;;; 2025-05-04 dsm  *compilation-dependencies-stats*, speed up compile
 ;;;                 operations by tracking already compiled systems.
+;;;
+;;; 2026-03-10 dsm   support asdf foreign-system, with code reimagined
+;;;                  from marcoxa's repo. use a new registry for
+;;;                  foreign system types, exposed via
+;;;                  register-foreign-system-info.  refurbish
+;;;                  register-foreign-system to be extensible.  export
+;;;                  find-foreign-system. see B-side of
+;;;                  asdf-foreign-system.lisp for a concrete use case.
 
 ;;;---------------------------------------------------------------------------
 ;;; ISI Comments
@@ -1364,8 +1372,12 @@
                   missing-component-component
                   missing-module
                   missing-system
+		  missing-foreign-system
 
                   register-foreign-system
+		  foreign-system
+		  register-foreign-system-info
+		  find-foreign-system
 
                   machine-type-translation
                   software-type-translation
@@ -2701,6 +2713,7 @@ D
 	:type (member :defsystem
 		      :system
 		      :subsystem
+;;		      :foreign-system
 		      :module
 		      :file
 		      :private-file
@@ -2811,19 +2824,95 @@ D
 ;;; To allow dependencies from "foreign systems" like ASDF or one of
 ;;; the proprietary ones like ACL or LW.
 
-(defstruct (foreign-system (:include component (type :system)))
+(defstruct (foreign-system (:include component (type :system))
+			   (:print-function print-foreign-sys))
   kind ; This is a keyword: (member :asdf :pcl :lispworks-common-defsystem ...)
   object ; The actual foreign system object.
+  (load-time 0)
   )
 
+;; ;madhu 260310. marcoxa's repo has overhauled foreign-system code
+;; specifically for asdf. we reuse the code (commits efa51c7e,
+;; 3f3cf13, 011c658, 459d060, b4cd5ee) but with a different approach
+;; to extensibility: by introducing a new registry of foreign-system
+;; types via foreign-system-info exposed via
+;; register-foreign-system-info.
+;;
+;; the simple interface that existed should be expressive enough.  so
+;; keep existing signatures for compile-form, load-form slots. extend
+;; register-foreign-system to accept an already constructed
+;; foreign-system implement mk:find-foreign-system, and use this as
+;; part of the make process
 
-(defun register-foreign-system (name &key representation kind)
-  (declare (type (or symbol string) name))
-  (let ((fs (make-foreign-system :name name
-                                 :kind kind
-                                 :object representation)))
-    (setf (get-system name) fs)))
+(defstruct foreign-system-info
+  kind
+  constructor-op
+  compile-op
+  load-op
+  find-op)
 
+(defvar *foreign-systems-info* ()
+  "ALIST of (TYPE . FOREIGN-SYSTEM-INFO).
+Type is a keyword (:asdf, :lw, etc.)  CONSTRUCTOR-OP is called with
+keyword args NAME & TYPE, and should return an object of type
+FOREIGN-SYSTEM with COMPILE-FORM, LOAD-FORM, FIND-FORM slots filled
+in.")
+
+(defun register-foreign-system-info (kind &rest args &key (constructor-op t) (compile-op t) (load-op t) (find-op t) delete-p)
+  (declare (ignorable constructor-op compile-op load-op find-op))
+  (flet ((set-slot (obj slot-name value)
+	   (let ((slot (intern (concatenate 'string "FOREIGN-SYSTEM-INFO-"
+					    (string slot-name)))))
+	     ;; eval? yeah, i know...
+	     (EVAL `(funcall (function (setf ,slot)) ,value ,obj)))))
+    (let ((+slots+ '(:constructor-op :compile-op :load-op :find-op))
+	  (elt (assoc kind *foreign-systems-info*)))
+      (cond (elt (cond (delete-p (setq *foreign-systems-info*
+				       (remove elt *foreign-systems-info*))
+				 elt)
+		       (t (let ((info (cdr elt)))
+			    (loop for slot in +slots+
+				  for val = (getf args slot)
+				  unless (eql val t)
+				  do (set-slot info slot val))))))
+	    (t (let ((info (apply #'make-foreign-system-info
+				  (loop for slot in +slots+
+					for val = (getf args slot)
+					unless (eql val t)
+					append (list slot val)))))
+		 (push (cons kind info) *foreign-systems-info*)))))))
+
+
+(defun register-foreign-system (name-or-sys &key representation kind)
+  (declare (type (or symbol string foreign-system) name-or-sys)
+	   (type (or null keyword) kind))
+  (etypecase name-or-sys
+    ((or symbol string)
+     (let* ((constructor
+	     (when kind
+	       (let ((info (cdr (assoc kind *foreign-systems-info*))))
+		 (when info
+		   (foreign-system-info-constructor-op info)))))
+	    (fs (apply (or constructor #'make-foreign-system)
+		       :kind kind
+		       :object representation
+		       ;; constructor should set the name slot
+		       (unless constructor
+			 (list :name (string-downcase name-or-sys))))))
+       (setf (get-system name-or-sys) fs)))
+    (foreign-system
+     (setf (get-system (foreign-system-name name-or-sys))
+	   name-or-sys))))
+
+(defun print-foreign-sys (component stream depth)
+  (declare (ignore depth)
+           (type foreign-system component))
+  (format stream "#<FOREIGN ~:@(~A~): ~S loaded ~D (~:[~A~;~:*~A~])>"
+          (component-type component)
+          (component-name component)
+          (foreign-system-load-time component)
+          (foreign-system-object component)
+          (foreign-system-kind component)))
 
 
 (define-condition missing-component (simple-condition)
@@ -2855,6 +2944,63 @@ D
                      (missing-component-component msc))))
   )
 
+(define-condition missing-foreign-system (missing-system)
+  ((kind :reader missing-foreign-system-kind
+         :initarg :kind))
+  (:default-initargs :kind :asdf)
+  (:report (lambda (msc stream)
+	     (format stream "MK: Error: missing foreign ~A system ~S~@[ for S~]."
+                     (missing-foreign-system-kind msc)
+                     (missing-component-name msc)
+                     (missing-component-component msc))))
+)
+
+(defun find-foreign-system (sys-designator &key (errorp t) kind (where #P"."))
+  (declare (type (or symbol string foreign-system) sys-designator))
+  (labels ((find-foreign-sys-name (name kind where)
+             (declare (ignore where)
+                      (type (or symbol string) name)
+		      (ignorable kind)
+                      (type keyword kind)) ; :asdf :lw etc.
+	     (let* ((info (cdr (assoc kind *foreign-systems-info*)))
+		    (rep (when info
+			   (funcall (foreign-system-info-find-op info)
+				    (string-downcase name)))))
+	       (or rep
+		   (and errorp (error 'missing-foreign-system
+				      :name name)))))
+           (find-foreign-sys-object (sys)
+             (declare (type foreign-system sys))
+             (let ((foreign-sys (foreign-system-object sys)))
+               (if (not (null foreign-sys))
+                   sys
+                   (let ((real-foreign-sys
+                          (find-foreign-sys-name (foreign-system-name sys)
+						 (foreign-system-kind sys)
+						 nil)))
+                     (setf (foreign-system-object sys) real-foreign-sys)
+                     sys)))))
+    (handler-case
+        (etypecase sys-designator
+          ((or symbol string)
+           (let* ((real-foreign-sys
+                   (find-foreign-sys-name sys-designator kind where))
+                  (foreign-sys-component
+                   (register-foreign-system sys-designator
+                                            :representation real-foreign-sys
+                                            :kind kind)))
+             ;; (marcoxa) In this case I most likely just loaded it.
+             ;; This is not so correct, but at least it is a proper
+             ;; "time" value.
+             (setf (component-load-time foreign-sys-component)
+                   (get-universal-time))
+	     foreign-sys-component))
+          (foreign-system
+           (register-foreign-system
+            (find-foreign-sys-object sys-designator))))
+      (missing-foreign-system (mfs)
+        (when errorp
+          (error mfs))))))
 
 
 (defvar *file-load-time-table* (make-hash-table :test #'equal)
@@ -2866,6 +3012,7 @@ D
     (etypecase component
       (string    (gethash component *file-load-time-table*))
       (pathname (gethash (namestring component) *file-load-time-table*))
+      (foreign-system (foreign-system-load-time component))
       (component
        (ecase (component-type component)
 	 (:defsystem
@@ -2881,7 +3028,14 @@ D
 	    (when path
 	      (gethash path *file-load-time-table*)))))))))
 
-#-(or :cmu)
+
+#||
+;;madhu 260310
+;; retire setf expander in favour of (setf component-full-pathname)
+;; because this expander has to be defined before compiling
+;; find-foreign-function, which uses it, and the setf method probably
+;; works on cmu anyway. ref: marcoxa repo commit e500893
+
 (defsetf component-load-time (component) (value)
   `(when ,component
     (etypecase ,component
@@ -2889,6 +3043,7 @@ D
       (pathname (setf (gethash (namestring (the pathname ,component))
 			       *file-load-time-table*)
 		      ,value))
+      (foreign-system (setf (foreign-system-load-time ,component) ,value))
       (component
        (ecase (component-type ,component)
 	 (:defsystem
@@ -2905,8 +3060,8 @@ D
 	      (setf (gethash path *file-load-time-table*)
 		    ,value)))))))
     ,value))
+||#
 
-#+(or :cmu)
 (defun (setf component-load-time) (value component)
   (declare
    (type (or null string pathname component) component)
@@ -2917,6 +3072,7 @@ D
       (pathname (setf (gethash (namestring (the pathname component))
 			       *file-load-time-table*)
 		      value))
+      (foreign-system (setf (foreign-system-load-time component) value))
       (component
        (ecase (component-type component)
 	 (:defsystem
@@ -3083,7 +3239,8 @@ the system definition, if provided."
            (when (foreign-system-p system)
              (warn "Foreign system ~S cannot be reloaded by MK:DEFSYSTEM."
 		   system)
-             (return-from find-system nil))
+	     ;;madhu 260310 marcoxa returns the foreign system anyway
+             (return-from find-system system))
 	   (let ((path (compute-system-path system-name definition-pname)))
 	     (when (and path
 			(or (null system)
@@ -3106,7 +3263,9 @@ the system definition, if provided."
          (when (foreign-system-p (get-system system-name))
            (warn "Foreign system ~S cannot be reloaded by MK:DEFSYSTEM."
 		 (get-system system-name))
-           (return-from find-system nil))
+           (return-from find-system
+	     ;;madhu 260310 marcoxa returns the foreign system anyway
+	     (get-system system-name)))
 	 (or (find-system system-name :load-or-nil definition-pname)
 	     (error "Can't find system named ~s." system-name))))))
 
@@ -5053,6 +5212,9 @@ reload this module which clobbers all objects.
               ;; (find-system (component-name component) :load)
 
               #| Marco Antoniotti 20090416: may break in strange ways due to circularities. |#
+	     (if (foreign-system-p component)
+		 (let ((fs (find-foreign-system component)))
+		   fs)
               (ecase (component-type component)
                 (:system
                  (find-system (component-name component) :load))
@@ -5067,7 +5229,7 @@ reload this module which clobbers all objects.
                                               :directory nil)
                                (component-full-pathname component
                                                         :source))
-                              )))
+                              ))))
               )
              )
 	;; Now we have a problem.
@@ -5078,8 +5240,15 @@ reload this module which clobbers all objects.
 	;; kludge.  This should prevent re-entering in this
 	;; code branch, while actually preparing the COMPONENT
 	;; for operation.
-	(setf (component-components component)
-	      (list system-component))
+	;;
+        ;; 20220204 MA: The kludge does not work for the new
+        ;; FOREIGN-SYSTEMs as COMPONENT and SYSTEM-COMPONENT *are* now
+        ;; the same. Hence the system would loop if we did not test as
+        ;; below.
+        (unless (eq component system-component)
+          ;; ... and (not (foreign-system-p system-component))
+	  (setf (component-components component)
+		(list system-component)))
 	))))
 
 

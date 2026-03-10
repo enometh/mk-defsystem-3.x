@@ -84,3 +84,37 @@ system in the serial order that asdf would compile and load them."
 (dolist (i $l) (mk:oos i :load) (register-foreign-system i))
 (dump-serial-filelist $a)
 ||#
+
+
+;;; ----------------------------------------------------------------------
+;;;
+;;; B-SIDE 2 - using ASDF foreign system from within defsystem
+;;;
+
+(in-package "MAKE")
+
+(mk:register-foreign-system-info
+ :asdf
+ :constructor-op
+ (lambda (&key kind object)
+   (assert (eql kind :asdf))
+   (check-type object asdf:system)
+   (make-foreign-system :kind kind
+			:name (asdf/system:primary-system-name object)
+			:object object
+			:compile-form (lambda ()
+					(asdf:compile-system object))
+			:load-form (lambda ()
+				     (asdf:load-system object))))
+ :find-op (lambda (s)
+	    (asdf:find-system s nil)))
+
+#||
+*foreign-systems-info*
+(asdf/system:primary-system-name (asdf:find-system "cl-git"))
+(mk:find-foreign-system  "cl-git" :kind :asdf)
+(get-system "cl-git")
+(mk:undefsystem "cl-git")
+(mk:compile-system :cl-git)
+(mk:find-system :cl-git)
+||#
