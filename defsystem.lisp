@@ -6563,12 +6563,14 @@ output to *trace-output*.  Returns the shell's exit code."
 	   nil)
 	  (t nil))))
 
-(defun compile-file-operation (component force)
-  (compile-file-operation--internal component force)
+(defun compile-file-operation (component force &aux ret)
+  (declare (ignorable ret))
+  (setq ret (compile-file-operation--internal component force))
   ;; ;madhu 170729 ecl: additionally compile a ".o"
   #+(or ecl mkcl)
   (if *ecl-compile-file-system-p*
-      (compile-file-operation--ecl component force)))
+      (compile-file-operation--ecl component force)
+      ret))
 
 ;;; compiled-file-p --
 ;;; See CLOCC/PORT/sys.lisp:compiled-file-p
