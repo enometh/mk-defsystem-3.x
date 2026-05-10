@@ -2864,7 +2864,7 @@ in.")
 	   (let ((slot (intern (concatenate 'string "FOREIGN-SYSTEM-INFO-"
 					    (string slot-name)))))
 	     ;; eval? yeah, i know...
-	     (EVAL `(funcall (function (setf ,slot)) ,value ,obj)))))
+	     (EVAL `(setf (,slot ,obj) ,value)))))
     (let ((+slots+ '(:constructor-op :compile-op :load-op :find-op))
 	  (elt (assoc kind *foreign-systems-info*)))
       (cond (elt (cond (delete-p (setq *foreign-systems-info*
