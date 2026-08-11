@@ -7304,7 +7304,8 @@ otherwise return a default system name computed from PACKAGE-NAME."
 	;; ;madhu 231228 - handle uses of the demenented package
 	;; naming system: "d.lisp" defines a package "a.b.c/d" which
 	;; uses package "a.b.c/e" defined in e.lisp.
-	((and (> idx 0) (eql (elt pkg-spec idx) #\/))
+	((and (> idx 0) (< idx (length pkg-spec)) ;;madhu 260812
+	      (eql (elt pkg-spec idx) #\/))
 	 (subseq pkg-spec (1+ idx)))))
 
 (defun package-inferred-hack-get-pathname-on-disk (pkg-spec prefix dir)
@@ -7312,21 +7313,26 @@ otherwise return a default system name computed from PACKAGE-NAME."
   (let ((x (package-inferred-prefixp prefix pkg-spec)))
     (when x
       (let ((p (concatenate 'string dir x ".lisp")))
-	p))))
+	(and (probe-file p)
+	     p)))))
 
 (defun package-inferred-hack-generate-file-list
-    (path prefix &optional dir (depth 0) &aux ignored-deps)
+    (path prefix &optional dir curdep (depth 0) &aux ignored-deps)
   (unless dir
     (assert (zerop depth))
     (setq dir (directory-namestring path)))
-  (let ((ret (loop for dep in  (package-inferred-system-file-dependencies path)
+  (let ((ret (loop for dep in (remove curdep ;madhu 260812 avoid stack overflow
+				      (package-inferred-system-file-dependencies path)
+				      :test #'equalp)
 		   for p = (package-inferred-hack-get-pathname-on-disk
 			    dep prefix dir)
-		   unless p do (progn (pushnew dep ignored-deps :test #'equalp))
+		   unless p do (progn (unless (find dep ignored-deps :test #'equalp)
+					(setq ignored-deps (append ignored-deps
+								   (list dep)))))
 		   if p
 		   append
 		   (multiple-value-bind (ret1 ignored-deps1)
-		       (package-inferred-hack-generate-file-list p prefix dir (1+ depth))
+		       (package-inferred-hack-generate-file-list p prefix dir dep (1+ depth))
 		     (setq ignored-deps (union ignored-deps ignored-deps1 :test #'equalp))
 		     ret1)
 
@@ -7338,7 +7344,7 @@ otherwise return a default system name computed from PACKAGE-NAME."
 							     (package-inferred-prefixp prefix a))
 							   x))))
 				   (when y `(:depends-on ,y)))))))))
-    (setq ret (delete-duplicates ret :test #'equal :key #'second))
+    (setq ret (delete-duplicates ret :test #'equalp :key #'second))
     (values
      (if (zerop depth)
 	 (remove nil
@@ -7673,7 +7679,16 @@ otherwise return a default system name computed from PACKAGE-NAME."
 	     `(:source-pathname ,(car subdirs)))
 	 :components ,(make-mk-form-1 components-form (cdr subdirs))))))
 
-(defun make-mk-form (asd-form subdirs asd-path)
+(defun asd-hack-ensure-atom-dep (dep &aux val)
+  (if (atom dep)
+      dep
+      (progn (assert (eql :feature (car dep)))
+	     (setq val (featurep (cadr dep)))
+	     (assert (atom (third dep)))
+	     (assert (endp (cdddr dep)))
+	     (values (third dep) val))))
+
+(defun make-mk-form (asd-form subdirs asd-path &key override-prefix)
   (let* ((depends-on (getf asd-form :depends-on))
 	 (components (getf asd-form :components))
 	 (pathname-complication (ensure-mergable-string (getf asd-form :pathname)))
@@ -7687,12 +7702,14 @@ otherwise return a default system name computed from PACKAGE-NAME."
     ;; :package-inferred-system without really meaning it
     (when (and package-inferred-p (not components))
       ;;(assert (= (length depends-on) 1))
-      (let* ((prefix (concatenate 'string (string (second asd-form)) "/"))
+      (let* ((prefix (concatenate 'string (or override-prefix
+					      (string (second asd-form)))
+				  "/"))
 	     new-depends-on new-components)
 	(loop for dep in depends-on
 	      for pkg-path =
 	      (package-inferred-hack-get-pathname-on-disk
-	       dep prefix
+	       (asd-hack-ensure-atom-dep dep) prefix
 	       (directory-namestring
 		(if pathname-complication
 		    (merge-pathnames pathname-complication asd-path)
@@ -7701,15 +7718,22 @@ otherwise return a default system name computed from PACKAGE-NAME."
 ;;	(assert pkg-path nil "Could not infer the path to the package file")
 	(if (null pkg-path)
 	    (progn (format t "MAKE-MK-FORM:: Could not infer the path to the package file for ~S.~&" dep)
-		   (pushnew dep new-depends-on))
+		   (unless (find dep new-depends-on :test #'equalp)
+		     (setq new-depends-on (append new-depends-on (list dep)))))
 	(multiple-value-bind (ret1 ignored-deps1)
 	    (package-inferred-hack-generate-file-list pkg-path prefix)
-	  (setq new-depends-on (append new-depends-on ignored-deps1))
-	  (setq new-components (append new-components
-				       ret1
-				       `((:file ,(package-inferred-prefixp
-						  prefix
-						  dep))))))))
+	  (dolist (d ignored-deps1)
+	    (unless (find d new-depends-on :test #'equalp)
+	      (setq new-depends-on (append new-depends-on (list d)))))
+	  (let ((form `((:file ,(package-inferred-prefixp
+				 prefix
+				 (asd-hack-ensure-atom-dep dep))
+			 ,@(and (consp dep)
+				`(:if-feature ,(second dep)))))))
+	    (dolist (f (append ret1 form))
+	      (unless (find f new-components :test #'equalp)
+		(setq new-components (append new-components
+					     (list f)))))))))
 	(if new-depends-on (setq depends-on new-depends-on))
 	(if new-components (setq components new-components))))
     `(defsystem ,(second asd-form)
