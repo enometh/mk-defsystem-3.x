@@ -7742,6 +7742,65 @@ otherwise return a default system name computed from PACKAGE-NAME."
 			  ,(make-mk-form-1 components
 					   subdirs))))))
 
+(defun make-mk-form0 (asd-form subdirs asd-path &key override-prefix)
+  "Alternative version which multiplies the number of systems to as many systems as there are files."
+  (let* ((depends-on (getf asd-form :depends-on))
+	 (components (getf asd-form :components))
+	 (pathname-complication (ensure-mergable-string (getf asd-form :pathname)))
+	 (package-inferred-p
+	  (let ((p (string (getf asd-form :class))))
+	    (or (eq p :package-inferred-system)
+		(equalp (string p) (string :package-inferred-system))
+		#+nil p)))
+	 (code-dir (directory-namestring
+		    (if pathname-complication
+			(merge-pathnames pathname-complication asd-path)
+			asd-path))))
+    (when (and package-inferred-p (not components))
+      ;;(assert (= (length depends-on) 1))
+      (let* ((prefix (concatenate 'string (or override-prefix
+					      (string (second asd-form)))
+				  "/"))
+	     new-depends-on
+	     new-components)
+	(labels ((foo (dep pkg-path)
+		   (if (null pkg-path)
+		       (progn (format t "MAKE-MK-FORM:: Could not infer the path to the package file for ~S.~&" dep)
+			      (unless (find dep new-depends-on :test #'equalp)
+				(setq new-depends-on
+				      (append new-depends-on (list dep)))))
+		       (let* ((file-list
+			       (package-inferred-system-file-dependencies pkg-path))
+			      (dep-atom (asd-hack-ensure-atom-dep dep))
+			      (suffix (package-inferred-prefixp prefix dep-atom))
+			      (elt
+			       `(defsystem ,dep-atom
+				 ,@(and file-list `(:depends-on ,file-list))
+				 :components
+				 ,(make-mk-form-1
+				   `(:file ,suffix
+				     ,@(and (consp dep)
+					    (list :if-feature (second dep))))
+				   subdirs))))
+			 (unless (find elt new-components :test #'equalp)
+			   (setq new-components
+				 (append new-components (list elt))))
+			 ;;	  (break)
+			 (dolist (p file-list)
+			   (foo p (package-inferred-hack-get-pathname-on-disk
+				   (asd-hack-ensure-atom-dep p)
+				   prefix code-dir)))))))
+	  (dolist (p depends-on)
+	    (foo p
+		 (package-inferred-hack-get-pathname-on-disk
+		  (asd-hack-ensure-atom-dep p)
+		  prefix code-dir)))
+	  (setq new-components
+		(cons (list 'defsystem (second asd-form)
+			    :depends-on depends-on)
+		      new-components))
+	  (values new-components new-depends-on))))))
+
 (defun get-asd-file-list (dir)
   (mk::split-string
    (with-output-to-string (stream)
@@ -7770,7 +7829,9 @@ otherwise return a default system name computed from PACKAGE-NAME."
 				     skip-source-p
 				     (skip-binary-p skip-source-p)
 				     (if-exists :supersede)
-				     root-dir-form)
+				     root-dir-form
+				     multiply-sysdefs
+				     )
   (let* ((*asd-hack-system-name* name)
 	  (source-dir (format nil "*~(~A~)-source-dir*" name))
 	 (binary-dir (format nil "*~(~A~)-binary-dir*" name))
@@ -7779,9 +7840,11 @@ otherwise return a default system name computed from PACKAGE-NAME."
 			    for pathname-complication = (ensure-mergable-string (getf asd-form :pathname))
 			    for subdirs = (extract-subdirs f (translate-logical-pathname root-dir)
 							   pathname-complication)
-			    for mk-form = (with-simple-restart (skip "Skip")
-					    (make-mk-form asd-form subdirs f))
-			    when mk-form collect it))
+			    for mk-forms = (with-simple-restart (skip "Skip")
+					     (if (not multiply-sysdefs)
+						 (list (make-mk-form asd-form subdirs f))
+						 (make-mk-form0 asd-form subdirs f)))
+			    append mk-forms))
 		      #'compare-system-names
 		      :key #'second)))
     (with-open-file (stream target-file :direction :output
