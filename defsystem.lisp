@@ -4596,12 +4596,13 @@ KEYWORD package, so you need specify keywords explicitly."
 ;;;
 
 (defun %mk-traverse (system function &optional collect-results
-		     *recursively-handle-deps*)
+		     *recursively-handle-deps*
+		     uniq &aux seen-deps)
   ;; One _could_ use mk::*operations-propagate-to-subsystems* instead
   ;; of *recursively-handle-deps* to control what happens on
   ;; dependencies but the default value may not be appropriate.
   (declare (special *recursively-handle-deps*))
-  (labels ((walk-components (component &aux result)
+  (labels ((walk-components (component &optional (depth 0) &aux result)
 	     (setq result (funcall function component))
 	     (ecase (mk::component-type component)
 	       ((:file :private-file)
@@ -4643,9 +4644,12 @@ KEYWORD package, so you need specify keywords explicitly."
 			   unless depsys
 			   do
 			   (warn "Not handling unknown system: ~S." dep)
-			   else nconc (walk-components depsys)))
+			   else if (or (not uniq)
+				       (not (prog1 (find depsys seen-deps)
+					      (push depsys seen-deps))))
+			   nconc (walk-components depsys (1+ depth))))
 		   (loop for x in (mk::component-components component)
-			 nconc (walk-components x))))))))
+			 nconc (walk-components x (1+ depth)))))))))
     (walk-components (etypecase system
 		       (mk::component
 			(ecase (mk::component-type system)
@@ -4655,7 +4659,7 @@ KEYWORD package, so you need specify keywords explicitly."
 ;; if function is nil return a list of files
 (defun system-map-files (system &optional function &key
 			 recursively-handle-deps
-			 (type :source) &aux ret)
+			 (type :source) uniq  &aux ret)
   ;; "Rename as SYSTEM-MAP-PATHNAMES if docstring is ever written."
   (%mk-traverse
    system
@@ -4666,10 +4670,11 @@ KEYWORD package, so you need specify keywords explicitly."
 	 (when arg
 	   (if function
 	       (funcall function (pathname arg))
-	       (push  (pathname arg) ret))))))
 
+	       (push  (pathname arg) ret))))))
    nil
-   recursively-handle-deps)
+   recursively-handle-deps
+   uniq)
   (nreverse ret))
 
 (defvar *load-concated-fasl-instead* t)
@@ -4736,7 +4741,7 @@ For MKCL supply :FASL-P NIL to MKCL's COMPILE-FILE
     (symbol (mk:find-system system))
     (string (mk:find-system system))))
 
-(defun concated-fasl-list (system &key (recursively-handle-deps t) &aux fasls)
+(defun concated-fasl-list (system &key (recursively-handle-deps t) (uniq t) &aux fasls)
   (labels ((handle-load-only (component)
 	     (assert (find (mk::component-type component)
 			   '(:file :private-file)))
@@ -4787,7 +4792,8 @@ For MKCL supply :FASL-P NIL to MKCL's COMPILE-FILE
     (%mk-traverse (ensure-system system)
 		  #'handle-one
 		  nil
-		  recursively-handle-deps)
+		  recursively-handle-deps
+		  uniq)
     fasls))
 
 #+nil
@@ -4927,17 +4933,23 @@ reload this module which clobbers all objects.
 
 (defun mk-concat-sources (system pathname &optional
 			  make::*recursively-handle-deps*
-			  &key (language :lisp)) ; wont work for grovel etc.
+			  &key (language :lisp) ; wont work for grovel, etc
+			  (dry-run-p nil)
+			  (uniq t))
   "Concatenate the source files of system onto PATHNAME."
   (declare (special make::*recursively-handle-deps*))
   (let (list
 	(buf (make-array 2048 :element-type '(unsigned-byte 8))))
     (flet ((collect-files (component)
 	     (when (and (eq (mk::component-type component) :file)
-			(if language
-			    (eq (mk::component-language component) language)))
+			(let ((lang (mk::component-language component)))
+			  (or (null lang)
+			      (eql lang language))))
 	       (push component list))))
-      (%mk-traverse system #'collect-files nil nil)
+      (%mk-traverse system #'collect-files nil make::*recursively-handle-deps*
+		    uniq)
+      (if dry-run-p
+	  (values pathname (nreverse list))
       (with-open-file (out pathname :element-type '(unsigned-byte 8)
 			   :direction :output :if-exists :supersede
 			   :if-does-not-exist :create)
@@ -4952,7 +4964,7 @@ reload this module which clobbers all objects.
 			  until (= x 0)
 			  do (write-sequence buf out :end x)))
 		(skip-this-file () :report "Skip this file.")))
-	pathname))))
+	pathname)))))
 
 ;;;===========================================================================
 ;;; Running the operations.
