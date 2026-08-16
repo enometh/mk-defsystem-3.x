@@ -10,13 +10,20 @@
 ;;; "preloaded" asdf foreign systems via asdf::register-system.  See
 ;;; REGISTER-FOREIGN-SYSTEMS.  The systems should already be loaded
 ;;; via mk-defsystem.
+;;;
+;;; Export ASDF:MK-REGISTER-FOREIGN-SYSTEM (which registers a
+;;; mk-defystem system as a foreign preloaded system) and
+;;; ASDF:MK-REGISTER-FOREIGN-SYSTEMS (which registers mk-defsystem
+;;; systems and all their dependencies) from the ASDF package as
+;;; aliases to the functions in this file.
 
-(cl:defpackage "ASDF-FOREIGN-SYSTEM"
- (:use "CL"  #:asdf)
+
+(cl:defpackage "MK-ASDF-FOREIGN-SYSTEM"
+ (:use "CL")
  (:export "REGISTER-FOREIGN-SYSTEMS"))
 (cl:in-package "ASDF-FOREIGN-SYSTEM")
 
-(defclass asdf-foreign-system (system)
+(defclass asdf-foreign-system (asdf:system)
   ((foreign-system :initform nil :initarg :foreign-system)))
 
 (defun canonical-system-name-for-asdf (foreign-system)
@@ -33,19 +40,37 @@
     (setf (slot-value asdf-foreign-system 'asdf/component:name)
 	  (canonical-system-name-for-asdf foreign-system))))
 
-(defun register-foreign-system (system)
+(defun register-foreign-system (system &key replace)
+  "SYSTEM is a system designator for an already loaded mk-defsystem
+system.  Registers SYSTEM as a \"preloaded\" asdf foreign system
+unless a system same name is already loaded.  If REPLACE is non-NIL,
+replaces any registered asdf system with the given system."
   (unless (typep system '(or mk:mk-defsystem mk::foreign-system))
     (setq system (mk:find-system system :error)))
-  (or (find-system (canonical-system-name-for-asdf system) nil)
-      (asdf::register-system
-       (make-instance 'asdf-foreign-system
-	 :foreign-system system))))
+  ;; we cannot use find-system to check if system is already loaded
+  ;; because it will load an asdf system if it can find it
+  (multiple-value-bind (foundp found-system pathname previous previous-time)
+      (locate-system (canonical-system-name-for-asdf system))
+    (declare (ignorable foundp found-system pathname previous previous-time))
+    (cond ((and (not replace) previous) previous)
+	  (t (values (asdf::register-system
+		      (make-instance 'asdf-foreign-system
+			:foreign-system system))
+		     previous)))))
 
-(defun register-foreign-systems (system-or-systems)
-  "register system-or-systems and their dependencies with asdf"
-  (mapcar 'register-foreign-system
+(defun register-foreign-systems (system-or-systems &key replace)
+  "Register and system-or-systems and all their dependencies with asdf as
+foreign systems."
+  (mapcar (lambda (sys) (register-foreign-system sys :replace replace))
 	  (mk:get-recursive-deps system-or-systems
 				 :include-roots t)))
+
+(export '(asdf::mk-register-foreign-system asdf::mk-register-foreign-systems)
+	"ASDF")
+(setf (fdefinition 'asdf::mk-register-foreign-system)
+      #'register-foreign-system)
+(setf (fdefinition 'asdf::mk-register-foreign-systems)
+      #'register-foreign-systems)
 
 #||
 (require 'cffi)
