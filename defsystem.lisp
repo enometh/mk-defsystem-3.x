@@ -7831,7 +7831,7 @@ otherwise return a default system name computed from PACKAGE-NAME."
     (let ((la (length as)) (lb (length bs)))
       (or (> la lb)
 	  (and (= la lb)
-	       (string> as bs))))))
+	       (string> (string-upcase as) (string-upcase bs)))))))
 
 ;;;
 ;;; generate defsystem files from asd definitions
