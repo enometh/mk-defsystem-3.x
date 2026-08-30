@@ -41,8 +41,8 @@
 
 ;; allow variables exported in package LC-LITE and used in CL-USER
 ;; (via USE-PACKAGE) to be defined in CL-USER even before loading
-;; lc-lite.lisp. FUNNEL-SYMBOL will handle dealing with these symbols
-;; when lc-lite.lisp.lisp is loaded.  package1 is always cl-user
+;; lc-lite.lisp. FUNNEL-SYMBOL handles these symbols
+;; when lc-lite.lisp is loaded.  package1 is always cl-user
 ;; package2 is always lc-lite.
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
@@ -98,7 +98,8 @@
 	      (and (find x *features*)
 		   (list (concatenate 'string "binary-" (string-downcase x)))))
 	    '(:allegro :lispworks :ccl :clozure :cmu :clisp
-	      :gcl :ecl :scl :mkcl :sbcl :armedbear :clasp))
+	      :gcl :ecl :scl :mkcl :sbcl :armedbear :clasp
+	      :genera))
       (cerror "Continue." "Unknown implementation."))
   "List of strings denoting directory components under fasl root.")
 
@@ -107,7 +108,8 @@
   (or (some (lambda (x)
 	      (and (find x *features*) (string-downcase x)))
 	      '(:macosx :linux :windows :mswindows :win32 :solaris :darwin
-		:sunos :hpux :unix :mezzano))
+		:sunos :hpux :unix :mezzano
+		:genera))
       (cerror "Continue." "Unknown implementation.")))
 
 (defvar *binary-directory-architecture-feature*
@@ -118,7 +120,8 @@
 		:arm :armv5l :armv6l :armv7l :arm64
 		:pentium3 :pentium4
 		:mips :mipsel
-		:java-1.4 :java-1.5 :java-1.6 :java-1.7))
+		:java-1.4 :java-1.5 :java-1.6 :java-1.7
+		:vlm))
       (cerror "Continue." "Unknown implementation.")))
 
 (defvar *binary-directory-version*
@@ -318,27 +321,30 @@ DRY-RUN."
 
 (defun wildify (root &rest components)
   "COMPONENTS are directory components. Returns a WILD PATHNAME."
-  (merge-pathnames (make-pathname :name :wild :type :wild :version
-				  #+clisp :newest
-				  #-clisp :wild
-				  :directory (append '(:relative) components)
-				  :host nil)
-		   root
-		   nil))
+  (namestring
+   (merge-pathnames (make-pathname :name :wild :type :wild :version
+				   #+clisp :newest
+				   #-clisp :wild
+				   :directory (append '(:relative) components)
+				   :host nil)
+		    root
+		    nil)))
 
-(defun wildset-lpn-translations (HOST ROOT &key wipe dry-run)
+(defun wildset-lpn-translations (HOST ROOT &key wipe dry-run logical-subdir)
   "Wildify directory ROOT and set that as the logical-pathname
 translations for HOST."
   (if (null ROOT)			;special case
       (unless dry-run
 	(setf (logical-pathname-translations HOST) nil))
       (when (or wipe (not (ignore-errors (logical-pathname-translations HOST))))
-	(let ((form `(("*.*.*"
+	(let ((form `(#-genera ;madhu 260901 - can't handle this yet
+		      ("*.*.*"
 		       ,(wildify root))
 		      ("**;*.*.*"
 		       ,(wildify root :wild-inferiors))
-		      (";**;*.*.*"
-		       ,(wildify root :wild-inferiors)))))
+		      ,@(and logical-subdir
+			     `((,(format nil "~A;**;*.*.*" logical-subdir)
+				 ,(wildify root :wild-inferiors)))))))
 	  (if dry-run
 	      form
               (setf (logical-pathname-translations HOST) form ))))))
