@@ -1,4 +1,4 @@
-;;; -*- Mode: Lisp; Package: MAKE; Syntax: Common-Lisp -*-
+;;; -*- Mode: Lisp; Package: CL-USER; Syntax: ANSI-Common-Lisp -*-
 
 ;;; DEFSYSTEM 3.8 Interim.
 
@@ -1251,6 +1251,9 @@
   (:nicknames :mk))
 
 
+#+genera
+(defpackage "MAKE" (:use "COMMON-LISP")
+  (:nicknames "MK"))
 
 ;;;; madhu 220223 if we defined the MAKE package before loading this
 ;;;; file (to set some defvars before the defvars are defined), then
@@ -1269,7 +1272,7 @@
 		    (cons "MK" nicknames))))
 )
 
-#-(or :abcl :sbcl :cltl2 :lispworks :ecl :mkcl :scl :clozure-common-lisp :clasp cmu)
+#-(or :abcl :sbcl :cltl2 :lispworks :ecl :mkcl :scl :clozure-common-lisp :clasp cmu genera)
 (in-package "MAKE" :nicknames '("MK"))
 
 #+(or :cltl2 :lispworks :scl :clozure-common-lisp)
@@ -1280,6 +1283,9 @@
 (in-package "MAKE")
 
 #+:abcl
+(in-package "MAKE")
+
+#+genera
 (in-package "MAKE")
 
 ;;; *** Marco Antoniotti <marcoxa@icsi.berkeley.edu> 19970105
@@ -1343,6 +1349,7 @@
 ;;; then a succeeding export as well.
 
 (eval-when (:compile-toplevel :load-toplevel :execute)
+	   (defmacro _export_hack () '(progn
   (defvar *special-exports* nil)
   (defvar *exports* nil)
   (defvar *other-exports* nil)
@@ -1404,7 +1411,8 @@
                   *default-shell*
                   run-shell-command
                   )))
-  )
+  ))
+(_export_hack))
 
 
 ;;; We import these symbols into the USER package to make them
@@ -1734,7 +1742,7 @@ opertation was recursively called on the system."
 
 ;;; *filename-extensions* is a cons of the source and binary extensions.
 (defparameter *filename-extensions*
-  (car `(#+(and Symbolics Lispm)              ("lisp" . "bin")
+  (car `(#+(and Symbolics Lispm)              ("lisp" . "vbin")
          #+(and dec common vax (not ultrix))  ("LSP"  . "FAS")
          #+(and dec common vax ultrix)        ("lsp"  . "fas")
  	 #+ACLPC                              ("lsp"  . "fsl")
@@ -2257,8 +2265,8 @@ s/^[^M]*IRIX Execution Environment 1, *[a-zA-Z]* *\\([^ ]*\\)/\\1/p\\
          #-(or :MCL :sbcl :clisp :cmu :ecl :clozure-common-lisp) (rel-file (file-namestring rel-dir))
 	 ;; Stig (July 2001);
 	 ;; These values seems to help clisp as well
-	 #+(or :MCL :sbcl :clisp :cmu :ecl :clozure-common-lisp :lispworks) (rel-name (pathname-name rel-dir))
-	 #+(or :MCL :sbcl :clisp :cmu :ecl :clozure-common-lisp :lispworks) (rel-type (pathname-type rel-dir))
+	 #+(or :MCL :sbcl :clisp :cmu :ecl :clozure-common-lisp :lispworks :genera) (rel-name (pathname-name rel-dir))
+	 #+(or :MCL :sbcl :clisp :cmu :ecl :clozure-common-lisp :lispworks :genera) (rel-type (pathname-type rel-dir))
 	 (directory nil))
 
     ;; TI Common Lisp pathnames can return garbage for file names because
@@ -2311,11 +2319,11 @@ s/^[^M]*IRIX Execution Environment 1, *[a-zA-Z]* *\\([^ ]*\\)/\\1/p\\
                     :directory
                     directory
 		    :name
-		    #-(or :sbcl :MCL :clisp :cmu :ecl :clozure-common-lisp :lispworks) rel-file
-		    #+(or :sbcl :MCL :clisp :cmu :ecl :clozure-common-lisp :lispworks) rel-name
+		    #-(or :sbcl :MCL :clisp :cmu :ecl :clozure-common-lisp :lispworks genera) rel-file
+		    #+(or :sbcl :MCL :clisp :cmu :ecl :clozure-common-lisp :lispworks genera) rel-name
 
-		    #+(or :sbcl :MCL :clisp :cmu :ecl :clozure-common-lisp :lispworks) :type
-		    #+(or :sbcl :MCL :clisp :cmu :ecl :clozure-common-lisp :lispworks) rel-type
+		    #+(or :sbcl :MCL :clisp :cmu :ecl :clozure-common-lisp :lispworks genera) :type
+		    #+(or :sbcl :MCL :clisp :cmu :ecl :clozure-common-lisp :lispworks genera) rel-type
 		    ))))
 
 
@@ -2926,6 +2934,8 @@ in.")
 	     (format stream "MK:DEFSYSTEM: missing component ~S for ~S."
                      (missing-component-name mmc)
                      (missing-component-component mmc))))
+  #+(and genera nil)
+  (:default-initargs :format-control nil)
   )
 
 (define-condition missing-module (missing-component)
@@ -3099,6 +3109,9 @@ in.")
 
 (defvar *defsystem-to-defsystem-file-map* (make-hash-table :test #'equal))
 
+(defun safe-probe-file (file)
+  (#+genera ignore-errors #-genera identity (probe-file file)))
+
 (defun compute-system-path-1 (module-name &optional definition-pname)
   ;;madhu 170723 - handle retarded module-names "cffi/c2fi" ccl: blows
   ;;up on probe-file. clisp blows up on make-pathname :name
@@ -3123,21 +3136,21 @@ in.")
 			 :type *system-extension*))
          )
     (or (when definition-pname		; given pathname for system def
-	  (probe-file definition-pname))
+	  (safe-probe-file definition-pname))
 	;; Then the central registry. Note that we also check the current
 	;; directory in the registry, but the above check is hard-coded.
 	(cond (*central-registry*
 	       (dolist (reg-path (list-central-registry-directories))
-		 (let ((file (or (probe-file (append-directories
+		 (let ((file (or (safe-probe-file (append-directories
 					      reg-path file-pathname))
-				 (probe-file (append-directories
+				 (safe-probe-file (append-directories
 					      reg-path lib-file-pathname)))))
 		       (when file (return (values file reg-path))))))
 	      (t
 	       ;; No central registry. Assume current working directory.
 	       ;; Maybe this should be an error?
-	       (or (probe-file file-pathname)
-                   (probe-file lib-file-pathname)))))
+	       (or (safe-probe-file file-pathname)
+                   (safe-probe-file lib-file-pathname)))))
     ))
 
 
@@ -3151,7 +3164,7 @@ in.")
       (values
        (cond (ret1
 	      (cond (ret2
-		     (cond ((equalp ret1 (probe-file ret2)) ret1)
+		     (cond ((equalp ret1 (safe-probe-file ret2)) ret1)
 			   (t (warn "MK:COMPUTE-SYSTEM-PATH: system was last loaded from ~A (not ~A): using previously loaded path" ret2 ret1)
 			      ret2)))
 		    (t ret1)))
@@ -3169,7 +3182,7 @@ in.")
 		:defaults (pathname (component-full-pathname system :source))))
               )
           (values system-def-pathname
-                  (probe-file system-def-pathname)))
+                  (safe-probe-file system-def-pathname)))
         (values nil nil))))
 
 
@@ -5644,7 +5657,8 @@ reload this module which clobbers all objects.
 		   (funcall *old-require* module-name)))
 	     (format t "===> MADHU: called ~S on ~S~&===> MADHU: RETURNED ~S~&"
 		     *old-require* module-name val)
-	     val))
+	     (or val
+		 (find (string module-name) *modules* :test #'equal))))
 
           ;; If no default action, print a warning or error message.
           (t
@@ -5715,6 +5729,7 @@ reload this module which clobbers all objects.
 	       :mkcl
 	       :abcl
 	       :clasp
+	       :genera
 	       )
 	 'lisp:require
 	 #+(and :excl :allegro-v4.0) 'cltl1:require
@@ -5726,6 +5741,7 @@ reload this module which clobbers all objects.
 	 #+(or :ecl :mkcl) 'cl:require
 	 #+(or :abcl :armedbear) 'cl:require
 	 #+(or :clasp) 'cl:require
+	 #+(or :genera) 'cl:require
 	 )))
 
   (unless *dont-redefine-require*
@@ -5739,7 +5755,8 @@ reload this module which clobbers all objects.
                    :lispworks
                    :clozure-common-lisp
 		   :clasp
-		   :abcl) 'lisp:require
+		   :abcl
+		   :genera) 'lisp:require
 	     #+(and :excl :allegro-v4.0) 'cltl1:require
 	     #+:lispworks3.1 'common-lisp::require
 	     #+:sbcl 'cl:require
@@ -5748,6 +5765,7 @@ reload this module which clobbers all objects.
 	     #+(and :mcl (not :openmcl)) 'ccl:require
 	     #+(or :abcl :armedbear) 'cl:require
 	     #+(or :clasp) 'cl:require
+	     #+(or :genera) 'cl:require
 	     )
 	    (symbol-function 'new-require))
       #+:mkcl
