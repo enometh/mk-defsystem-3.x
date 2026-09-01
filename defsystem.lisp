@@ -7207,7 +7207,7 @@ nil)
 					     (car components)))
 			   (setq path (cdr path)))
 			  (t (return (car components)))))
-		   (t (setq components (cdr components)))))))))
+		   (t (setq components (cdr components)))))))))))
 ||#
 
 (defun system-relative-pathname (system path)
