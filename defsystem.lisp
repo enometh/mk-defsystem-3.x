@@ -746,6 +746,10 @@
 ;;;                  register-foreign-system to be extensible.  export
 ;;;                  find-foreign-system. see B-side of
 ;;;                  asdf-foreign-system.lisp for a concrete use case.
+;;;
+;;; 2026-09-09 dsm  add convenience functions to manipulate
+;;;                 make:*central-registry
+;;;
 
 ;;;---------------------------------------------------------------------------
 ;;; ISI Comments
@@ -8164,5 +8168,105 @@ SYSTEMS are included in the returned value."
 
 #+nil
 (get-recursive-deps 'cffi)
+
+;;madhu 260909
+(defun registry-equalp (pathname-a pathname-b)
+  "PATHNAME-A and PATHNAME-B are strings or pathnames.
+REGISTRY-EQUALP is meant to be used as a TEST function when
+manipulating MAKE:*CENTRAL-REGISTRY*."
+  (etypecase pathname-a
+    (pathname (etypecase pathname-b
+		(pathname (equalp pathname-a pathname-b))
+		(string (equal (namestring pathname-a) pathname-b))))
+    (string (etypecase pathname-b
+	      (pathname (equal pathname-a (namestring pathname-b)))
+	      (string (equal pathname-a pathname-b))))))
+
+#+nil
+(registry-equalp #p"a" "a")
+
+(defun registry-ensure-list (pathname-or-pathnames)
+  "Return value is a list of strings or pathnames denoting directories.
+Directories are checked by a terminating / in the namestring.
+Duplicates if any are removed by retaining earlier items."
+  (etypecase pathname-or-pathnames
+    ((or string pathname)
+     (assert (eql #\/ (elt #1=(namestring pathname-or-pathnames)
+			   (1- (length #1#)))))
+     (list pathname-or-pathnames))
+    (list
+     (let (seen dups)
+       (loop for x in pathname-or-pathnames do
+	     (assert (eql #\/ (elt #2=(namestring x) (1- (length #2#)))))
+	     (assert (typep x '(or string pathname)))
+	     (if (find x seen :test #'registry-equalp)
+		 (pushnew x dups :test #'registry-equalp)
+		 (push x seen)))
+       (if dups
+	   (values (nreverse seen) dups)
+	   pathname-or-pathnames)))))
+
+#+nil
+(equalp (multiple-value-list (let ((list (list #p"a" "b" "c" "a")))
+			       (registry-ensure-list list)))
+	'((#P"a" "b" "c") ("a")))
+
+(defun registry-remove (pathnames &optional
+			(registry-variable '*central-registry*))
+  "Remove given pathname or pathnames from MAKE:*CENTRAL-REGISTRY*"
+  (check-type registry-variable symbol)
+  (let* ((items (registry-ensure-list pathnames))
+	 (list (symbol-value registry-variable))
+	 (elts (loop for cons on list
+		     if (find (car cons) items :test #'registry-equalp)
+		     collect cons))
+	 (new (loop for (a b) on elts
+		    for c = (ldiff list a) then (ldiff c a)
+		    nconc c
+		    nconc (cdr (ldiff a b)))))
+    (if new (set registry-variable new))
+    (mapcar #'car elts)))
+
+#+nil
+(let ((*central-registry* (list "a" #p"b" "c" #p"a")))
+  (equalp (list (registry-remove "a") *central-registry*)
+	  '(("a" #P"a") (#P"b" "c"))))
+
+(defun registry-add (pathnames &optional (mode :prepend)
+		     (registry-variable '*central-registry*))
+  "if not already present add given pathname or pathnames at the
+beginning MAKE:*CENTRAL-REGISTRY* (if mode is PREPEND) or at the end
+if MODE is APPEND.  If MODE is FORCE-PREPEND ensure that the pathnames
+are present at the head."
+  (check-type registry-variable symbol)
+  (let* ((items (registry-ensure-list pathnames))
+	 (list (symbol-value registry-variable))
+	 (elts (loop for cons on list
+		     if (find (car cons) items :test #'registry-equalp)
+		     collect cons))
+	 (new (and (eql mode :force-prepend)
+		   (loop for (a b) on elts
+			 for c = (ldiff list a) then (ldiff c a)
+			 nconc c
+			 nconc (cdr (ldiff a b)))))
+	 (dif (and (find mode '(:append nil :prepend))
+		   (loop with list = (mapcar 'car elts)
+			 for item in items
+			 unless (find item list :test #'registry-equalp)
+			 collect item))))
+    (ecase mode
+      ((nil :append)
+       (if dif (set registry-variable (append list dif))))
+      (:prepend
+       (if dif (set registry-variable (append dif list))))
+      (:force-prepend
+       (set registry-variable (append items (or new list)))))))
+
+#+nil
+(let ((*central-registry* (list "a" #p"b" "c" #p"a")))
+  (registry-add #p"a" :force-prepend))
+
+(export '(registry-equalp registry-ensure-list
+	  registry-add  registry-remove))
 
 ;;; end of file -- defsystem.lisp --
