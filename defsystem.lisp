@@ -8210,10 +8210,12 @@ Duplicates if any are removed by retaining earlier items."
 			       (registry-ensure-list list)))
 	'((#P"a" "b" "c") ("a")))
 
-(defun registry-remove (pathnames)
+(defun registry-remove (pathnames &optional
+			(registry-variable '*central-registry*))
   "Remove given pathname or pathnames from MAKE:*CENTRAL-REGISTRY*"
+  (check-type registry-variable symbol)
   (let* ((items (registry-ensure-list pathnames))
-	 (list *central-registry*)
+	 (list (symbol-value registry-variable))
 	 (elts (loop for cons on list
 		     if (find (car cons) items :test #'registry-equalp)
 		     collect cons))
@@ -8221,7 +8223,7 @@ Duplicates if any are removed by retaining earlier items."
 		    for c = (ldiff list a) then (ldiff c a)
 		    nconc c
 		    nconc (cdr (ldiff a b)))))
-    (if new (setq *central-registry* new))
+    (if new (set registry-variable new))
     (mapcar #'car elts)))
 
 #+nil
@@ -8229,13 +8231,15 @@ Duplicates if any are removed by retaining earlier items."
   (equalp (list (registry-remove "a") *central-registry*)
 	  '(("a" #P"a") (#P"b" "c"))))
 
-(defun registry-add (pathnames &optional (mode :prepend))
+(defun registry-add (pathnames &optional (mode :prepend)
+		     (registry-variable '*central-registry*))
   "if not already present add given pathname or pathnames at the
 beginning MAKE:*CENTRAL-REGISTRY* (if mode is PREPEND) or at the end
 if MODE is APPEND.  If MODE is FORCE-PREPEND ensure that the pathnames
 are present at the head."
+  (check-type registry-variable symbol)
   (let* ((items (registry-ensure-list pathnames))
-	 (list *central-registry*)
+	 (list (symbol-value registry-variable))
 	 (elts (loop for cons on list
 		     if (find (car cons) items :test #'registry-equalp)
 		     collect cons))
@@ -8251,11 +8255,11 @@ are present at the head."
 			 collect item))))
     (ecase mode
       ((nil :append)
-       (if dif (setq *central-registry* (append *central-registry* dif))))
+       (if dif (set registry-variable (append list dif))))
       (:prepend
-       (if dif (setq *central-registry* (append dif *central-registry*))))
+       (if dif (set registry-variable (append dif list))))
       (:force-prepend
-       (if new (setq *central-registry* (append items new)))))))
+       (set registry-variable (append items (or new list)))))))
 
 #+nil
 (let ((*central-registry* (list "a" #p"b" "c" #p"a")))
