@@ -8190,13 +8190,18 @@ manipulating MAKE:*CENTRAL-REGISTRY*."
 (registry-equalp #p"a" "a")
 
 (defun registry-ensure-list (pathname-or-pathnames)
-  "Return value is a list of strings or pathnames.
+  "Return value is a list of strings or pathnames denoting directories.
+Directories are checked by a terminating / in the namestring.
 Duplicates if any are removed by retaining earlier items."
   (etypecase pathname-or-pathnames
-    ((or string pathname) (list pathname-or-pathnames))
+    ((or string pathname)
+     (assert (eql #\/ (elt #1=(namestring pathname-or-pathnames)
+			   (1- (length #1#)))))
+     (list pathname-or-pathnames))
     (list
      (let (seen dups)
        (loop for x in pathname-or-pathnames do
+	     (assert (eql #\/ (elt #2=(namestring x) (1- (length #2#)))))
 	     (assert (typep x '(or string pathname)))
 	     (if (find x seen :test #'registry-equalp)
 		 (pushnew x dups :test #'registry-equalp)
