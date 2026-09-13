@@ -5815,7 +5815,9 @@ reload this module which clobbers all objects.
     (when (mk:find-system module-name :load-or-nil)
       (mk:load-system module-name
 		      :compile-during-load t
-		      :verbose nil))))
+		      :verbose nil)
+      ;; handle case when load-system returns nil e.g. empty system
+      t)))
 
 
 #+sbcl
