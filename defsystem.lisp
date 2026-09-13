@@ -5658,7 +5658,8 @@ reload this module which clobbers all objects.
 		   (funcall *old-require* module-name)))
 	     (format t "===> MADHU: called ~S on ~S~&===> MADHU: RETURNED ~S~&"
 		     *old-require* module-name val)
-	     val))
+	     (or val
+		 (find (string module-name) *modules* :test #'equal))))
 
           ;; If no default action, print a warning or error message.
           (t
@@ -5811,7 +5812,9 @@ reload this module which clobbers all objects.
     (when (mk:find-system module-name :load-or-nil)
       (mk:load-system module-name
 		      :compile-during-load t
-		      :verbose nil))))
+		      :verbose nil)
+      ;; handle case when load-system returns nil e.g. empty system
+      t)))
 
 
 #+sbcl
