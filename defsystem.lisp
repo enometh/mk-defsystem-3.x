@@ -2898,6 +2898,13 @@ in.")
 (defun register-foreign-system (name-or-sys &key representation kind)
   (declare (type (or symbol string foreign-system) name-or-sys)
 	   (type (or null keyword) kind))
+  (let ((exists (get-system name-or-sys)))
+    (when (and exists (not (typep exists 'foreign-system)))
+      (restart-case
+	(error "You are trying to register ~S as a foreign system but ~S already registered and is not a foreign system." name-or-sys
+	       exists)
+	(skip () (return-from register-foreign-system nil))
+	(proceed () nil))))
   (etypecase name-or-sys
     ((or symbol string)
      (let* ((constructor
