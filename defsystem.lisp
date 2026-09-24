@@ -3120,6 +3120,11 @@ in.")
 
 (defvar *defsystem-to-defsystem-file-map* (make-hash-table :test #'equal))
 
+(defun safe-probe-file (file &aux tn)
+  ;;(ignore-errors (probe-file file))
+  (and (setq tn (probe-file file))
+       (values (pathname file) tn)))
+
 (defun compute-system-path-1 (module-name &optional definition-pname)
   ;;madhu 170723 - handle retarded module-names "cffi/c2fi" ccl: blows
   ;;up on probe-file. clisp blows up on make-pathname :name
@@ -3144,21 +3149,21 @@ in.")
 			 :type *system-extension*))
          )
     (or (when definition-pname		; given pathname for system def
-	  (probe-file definition-pname))
+	  (safe-probe-file definition-pname))
 	;; Then the central registry. Note that we also check the current
 	;; directory in the registry, but the above check is hard-coded.
 	(cond (*central-registry*
 	       (dolist (reg-path (list-central-registry-directories))
-		 (let ((file (or (probe-file (append-directories
+		 (let ((file (or (safe-probe-file (append-directories
 					      reg-path file-pathname))
-				 (probe-file (append-directories
+				 (safe-probe-file (append-directories
 					      reg-path lib-file-pathname)))))
 		       (when file (return (values file reg-path))))))
 	      (t
 	       ;; No central registry. Assume current working directory.
 	       ;; Maybe this should be an error?
-	       (or (probe-file file-pathname)
-                   (probe-file lib-file-pathname)))))
+	       (or (safe-probe-file file-pathname)
+                   (safe-probe-file lib-file-pathname)))))
     ))
 
 
@@ -3172,7 +3177,7 @@ in.")
       (values
        (cond (ret1
 	      (cond (ret2
-		     (cond ((equalp ret1 (probe-file ret2)) ret1)
+		     (cond ((equalp ret1 (safe-probe-file ret2)) ret1)
 			   (t (warn "MK:COMPUTE-SYSTEM-PATH: system was last loaded from ~A (not ~A): using previously loaded path" ret2 ret1)
 			      ret2)))
 		    (t ret1)))
@@ -3190,7 +3195,7 @@ in.")
 		:defaults (pathname (component-full-pathname system :source))))
               )
           (values system-def-pathname
-                  (probe-file system-def-pathname)))
+                  (safe-probe-file system-def-pathname)))
         (values nil nil))))
 
 
@@ -3816,7 +3821,9 @@ used with caution.")
 		 definition-body)))
   (let* ((can-name (canonicalize-system-name name))
 	 (orig (gethash can-name *defsystem-to-defsystem-file-map*))
-	 (val (or *load-truename* *compile-file-truename*)))
+	 (val (or *load-pathname* *compile-file-pathname*
+		  *load-truename*
+		  *compile-file-truename*)))
     (when (and orig (not (equalp val orig)))
       (warn "Defsystem ~A is being defined in ~A (previously ~A)" can-name
 	    val orig))
