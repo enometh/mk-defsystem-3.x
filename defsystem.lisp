@@ -1685,35 +1685,6 @@ operation.")
 operation corresponding to compilation dependencies stored in
 *LAST-COMPILED-STATS*.")
 
-(defvar *compilation-dependencies-depth* -1)
-
-(defmacro with-compilation-dependencies-load-deps-restart (form)
-  `(let ((*compilation-dependencies-depth*
-	  (1+ *compilation-dependencies-depth*)))
-     (if (and (hash-table-p *compilation-dependencies-stats*)
-	      (eql *compilation-dependencies-depth* 0))
-	 (prog nil
-	  retry-compile-op
-	    (restart-case (return ,form)
-	      (load-all-deps-and-retry ()
-		:report (lambda (stream)
-			  (format stream "load deps for component ~A and retry compile-operation."
-				  *last-compiled-system*))
-		(let ((*compilation-dependencies-stats* T))
-		  (format t "~&load-deps-restart: ~S~&"
-			  (mapcar (lambda (x)
-				    (cons x (oos x :load :compile-during-load t)))
-				  (component-depends-on (ensure-system *last-compiled-system*)))))
-		(go retry-compile-op))))
-	 ,form)))
-
-(defmacro with-compilation-dependencies-load-deps-handled (form)
-  `(handler-case ,form
-     (error (c)
-       (declare (ignore c))
-       (let ((r (find-restart 'load-all-deps-and-retry)))
-	 (when r (invoke-restart r))))))
-
 (defun last-compiled-stats (&optional (table *last-compiled-stats*))
   "Return an array (name . count) where names are in the order in which
 the systems were compiled and count is the number of times the compile
@@ -5114,13 +5085,7 @@ reload this module which clobbers all objects.
 		     #-openmcl (optimize (inhibit-warnings 3)))
 	    (unless (component-operation operation)
 	      (error "Operation ~A undefined." operation))
-
-	    ;; ;madhu 250629 - work around a limitation of the current
-	    ;; implementation which requires all depends-on deps to be
-	    ;; already: offer a restart which loads the deps and
-	    ;; retries the compile operation again.
-	    (with-compilation-dependencies-load-deps-restart
-		(operate-on-component system operation force)))))
+	    (operate-on-component system operation force))))
     (when dribble (dribble))))
 
 
@@ -5402,18 +5367,23 @@ reload this module which clobbers all objects.
 	  (when (and (hash-table-p *compilation-dependencies-stats*)
 		     (or (eq type :defsystem) (eq type :system)
 			 (eq type :subsystem)))
-	    ;madhu 250629 - handle this assert automatically
-	    (with-compilation-dependencies-load-deps-handled
-		(assert (find operation '(:compile 'compile))))
-	    (let ((key (canonicalize-system-name (component-name component))))
-	      (multiple-value-bind (cons foundp)
-		  (gethash key *compilation-dependencies-stats*)
-		(cond (foundp (incf (cdr cons)))
-		      (t (setf (gethash key *compilation-dependencies-stats*)
-			       (cons (hash-table-count
-				      *compilation-dependencies-stats*)
-				     1))))))
-			   0)
+	    (cond ((find operation '(:compile 'compile))
+		   (let ((key (canonicalize-system-name
+			       (component-name component))))
+		     (multiple-value-bind (cons foundp)
+			 (gethash key *compilation-dependencies-stats*)
+		       (cond (foundp (incf (cdr cons)))
+			     (t (setf (gethash key
+					       *compilation-dependencies-stats*)
+				      (cons (hash-table-count
+					     *compilation-dependencies-stats*)
+					    1))))))
+		   0)
+		  (t ;; nested oos or load-deps
+		   (format t "skipped updating compilation-dependencies-stats for ~S operation on other system ~S when compiling ~S~&"
+			   operation
+			   (component-name component)
+			   *last-compiled-system*))))
 
 	  ;; Do any final actions
 	  (when (component-finally-do component)
