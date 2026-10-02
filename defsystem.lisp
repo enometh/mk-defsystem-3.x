@@ -1667,7 +1667,7 @@ and up to date.")
 If set to T the caching mechanism is disabled (sic).  If set to
 NIL (default) the outermost call to (OPERATE-ON-SYSTEM :COMPILE) binds
 this to either a new equal hash-table which (is thrown away at the end
-of the call), or to a freshly cleared *LAST-COMPILE-STATS* table.
+of the call), or to a freshly cleared *LAST-COMPILED-STATS* table.
 This table is propagated to subsequent calls.
 
 The keys are canonicalized system names and the values are a cons of 2
