@@ -1,4 +1,4 @@
-;;; -*- Mode: Lisp; Package: CL-USER; Syntax: ANSI-Common-Lisp -*-
+;;; -*- Mode: Lisp; Package: (:MAKE :USE :CL); Syntax: ANSI-Common-Lisp -*-
 
 ;;; DEFSYSTEM 3.8 Interim.
 
