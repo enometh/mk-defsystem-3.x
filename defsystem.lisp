@@ -2869,7 +2869,9 @@ in.")
 (defun register-foreign-system (name-or-sys &key representation kind)
   (declare (type (or symbol string foreign-system) name-or-sys)
 	   (type (or null keyword) kind))
-  (let ((exists (get-system name-or-sys)))
+  (let ((exists (get-system (if (typep name-or-sys 'foreign-system)
+				(foreign-system-name name-or-sys)
+				name-or-sys))))
     (when (and exists (not (typep exists 'foreign-system)))
       (restart-case
 	(error "You are trying to register ~S as a foreign system but ~S already registered and is not a foreign system." name-or-sys
@@ -5210,7 +5212,9 @@ reload this module which clobbers all objects.
     (let* ((cname (component-name component)))
       (declare (ignorable cname))
       ;; First we ensure that we reload the system definition.
-      (undefsystem cname)
+      (unless  (foreign-system-p component)
+	;; ;madhu 261019 - nobrainer check
+	(undefsystem cname))
       (let* ((*reload-systems-from-disk* t)
 	     (system-component
               
@@ -5218,7 +5222,7 @@ reload this module which clobbers all objects.
 
               #| Marco Antoniotti 20090416: may break in strange ways due to circularities. |#
 	     (if (foreign-system-p component)
-		 (let ((fs (find-foreign-system component)))
+		 (let ((fs (find-foreign-system component :kind (foreign-system-kind component))))
 		   fs)
               (ecase (component-type component)
                 (:system
